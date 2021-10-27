@@ -9,7 +9,7 @@ use serenity::{async_trait, client::bridge::gateway::ShardManager, framework::{s
             },
             Interaction,
         },
-    }, model::{interactions::application_command::ApplicationCommandType, prelude::*}, prelude::*};
+    }, model::{prelude::*}, prelude::*};
 
 use tracing::{error, info, debug};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
@@ -41,12 +41,13 @@ impl EventHandler for Handler {
 
     async fn ready(&self, ctx: Context, ready: Ready) {
         info!("Connected as {}", ready.user.name);
-        let a = Activity::streaming("VGM", "https://twitch.tv/sgqf");
+        let a = Activity::streaming("VGM", "https://twitch.tv/fmfunk");
         let _ = ctx.set_activity(a).await;
         
         let _ = ApplicationCommand::set_global_application_commands(&ctx.http, |commands| {
             commands
-                .create_application_command(|command| interactions::multiworld::create_multiworld_command(command))
+                // Multiworld command is disabled for now - was only used for testing stuff
+                //.create_application_command(interactions::multiworld::create_multiworld_command)
         }).await;
     }
 
@@ -55,11 +56,9 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, _ctx: Context, _reaction: Reaction) {
-       // mw_reaction_add(&ctx, &reaction).await;
     }
 
     async fn reaction_remove(&self, _ctx: Context, _reaction: Reaction) {
-       // mw_reaction_remove(&ctx, &reaction).await;
     }
 }
 
@@ -139,14 +138,13 @@ async fn main() {
         .configure(|c| c
             .with_whitespace(true)
             .on_mention(Some(bot_id))
-            .prefix(env::var("COMMAND_PREFIX").unwrap_or("%".to_string()))
+            .prefix(env::var("COMMAND_PREFIX").unwrap_or_else(|_| "%".to_string()))
             .owners(owners))
         .on_dispatch_error(dispatch_error)
         .normal_message(normal_message_hook)
         .help(&MY_HELP)
         .group(&GENERAL_GROUP)
         .group(&LEADERBOARD_GROUP);
-        //.group(&MULTIWORLD_GROUP);
 
     let application_id: u64 = env::var("APPLICATION_ID")
         .expect("Expected an application id in the environment")

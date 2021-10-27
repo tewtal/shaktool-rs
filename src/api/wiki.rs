@@ -61,13 +61,13 @@ pub async fn get_wiki_leaderboard() -> WikiResult<Vec<WikiRecord>> {
 
     /* Parse the tables */
     for table in document.select("table").map_err(|_| "Could not parse tables")? {
-        let category = categories.pop_front().unwrap_or("Unknown".to_string());
+        let category = categories.pop_front().unwrap_or_else(|| "Unknown".to_string());
         let table_node = table.as_node();
         for tr in table_node.select("tr").map_err(|_| "Could not parse rows")? {
             let tr_node = tr.as_node();
             let cols = tr_node.select("td").map_err(|_| "Could not parse columns")?.map(|e| e.text_contents().trim().to_string()).collect::<Vec<_>>();
-            if cols.len() > 0 {
-                let place = i32::from_str_radix(&cols[0], 10).unwrap_or(999);
+            if !cols.is_empty() {
+                let place = cols[0].parse::<i32>().unwrap_or(999);
                 
                 let link = match tr_node.select("a") {
                     Ok(mut l) => {

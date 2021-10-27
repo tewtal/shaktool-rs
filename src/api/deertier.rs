@@ -24,6 +24,7 @@ pub struct DeerTierRecord {
     pub date_submitted: Option<String>
 }
 
+#[allow(dead_code)]
 impl DeerTierRecord {
     pub async fn get_all_records() -> Result<Vec<DeerTierRecord>, Box<dyn std::error::Error + Send + Sync>> {
         let reqclient = reqwest::Client::new();
