@@ -1,0 +1,30 @@
+[package]
+name = "shaktool-rs"
+version = "2.0.0"
+authors = ["tewtal <total@viskos.org>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies.tokio]
+version = "1.0"
+features = ["macros", "signal", "rt-multi-thread"]
+
+[dependencies]
+dotenv = "0.15"
+tracing = "0.1.23"
+tracing-subscriber = "0.2"
+maplit = "0.1.5"
+base64 = "0.13"
+uuid = "0.8.2"
+reqwest = "0.11"
+inline-python = "0.7"
+serde = "1.0"
+serde_json = "1.0"
+mediawiki = "0.2.7"
+urlencoding = "2.1.0"
+chrono = "0.4"
+chrono-tz = "0.5"
+dtparse = "1.2.0"
+phf = { version = "0.9", features = ["macros"] }
+serenity = { git = "https://github.com/serenity-rs/serenity.git", features = ["unstable_discord_api"] }
