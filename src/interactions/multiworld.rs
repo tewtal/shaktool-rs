@@ -12,7 +12,7 @@ use serenity::{model::{
 
 use serenity::model::{channel::{Message}, id::{MessageId, UserId}, prelude::User};
 use serenity::{builder::{CreateEmbed}};
-use std::{collections::{HashMap}, error::Error};
+use std::{collections::{HashMap}};
 use maplit::hashmap;
 use tracing::{error, debug};
 use crate::util::slugid;

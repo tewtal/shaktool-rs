@@ -1,9 +1,8 @@
 use mediawiki::api::Api;
 use mediawiki::title::Title;
 use std::error::Error;
+use kuchiki::traits::*;
 
-const USERNAME: &str = "ShaktoolBot";
-const PASSWORD: &str = "MLrAbJh3A7Vqi24H4L6fjvmc";
 const URL: &str = "https://wiki.supermetroid.run/api.php";
 
 
@@ -28,7 +27,31 @@ pub async fn get_wiki_leaderboard() -> WikiResult<Vec<WikiRecord>> {
         ("prop", "text")
     ]);
 
-    let _page = api.get_query_api_json(&params).await?;
+    println!("Starting query...");
+    let result = api.get_query_api_json(&params).await?;
+    let text = result.get("parse").unwrap().get("text").unwrap().get("*").unwrap().as_str().unwrap();
+    let document = kuchiki::parse_html().one(text);
+    println!("Got response");
+
+    for row in document.select("tr").unwrap() {
+        let node = row.as_node();
+        
+    }
+
+    // for row in html.select(&row_selector) {
+    //     //let mut cols = row.select(&col_selector);
+    //     println!("{:?}", cols);
+    //     break;
+    // }
+
+    //let mut rows = html.select(&row_selector);
+    // rows.next();
+    // rows.next();
+
+    //let row = rows.next().unwrap();
+    //let cols = row.select(&col_selector).next().unwrap();
+
+
     Ok(Vec::new())
 }
 

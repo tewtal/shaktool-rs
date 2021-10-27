@@ -19,8 +19,8 @@ mod commands;
 mod api;
 mod interactions;
 
-//use commands::multiworld::*;
 use commands::general::*;
+use commands::leaderboard::*;
 
 use crate::util::cobe::Cobe;
 
@@ -100,8 +100,7 @@ async fn dispatch_error(ctx: &Context, msg: &Message, error: DispatchError) {
 
 
 #[hook]
-async fn normal_message_hook(ctx: &Context, msg: &Message) {
-    
+async fn normal_message_hook(ctx: &Context, msg: &Message) {    
     // Call the COBE message handler
     if let Err(e) = util::cobe::message_hook(ctx, msg).await {
         debug!("Cobe message handler error: {:?}", e);
@@ -140,12 +139,13 @@ async fn main() {
         .configure(|c| c
             .with_whitespace(true)
             .on_mention(Some(bot_id))
-            .prefix("%")
+            .prefix(env::var("COMMAND_PREFIX").unwrap_or("%".to_string()))
             .owners(owners))
         .on_dispatch_error(dispatch_error)
         .normal_message(normal_message_hook)
         .help(&MY_HELP)
-        .group(&GENERAL_GROUP);
+        .group(&GENERAL_GROUP)
+        .group(&LEADERBOARD_GROUP);
         //.group(&MULTIWORLD_GROUP);
 
     let application_id: u64 = env::var("APPLICATION_ID")

@@ -26,5 +26,6 @@ urlencoding = "2.1.0"
 chrono = "0.4"
 chrono-tz = "0.5"
 dtparse = "1.2.0"
+kuchiki = "0.8"
 phf = { version = "0.9", features = ["macros"] }
 serenity = { git = "https://github.com/serenity-rs/serenity.git", features = ["unstable_discord_api"] }
