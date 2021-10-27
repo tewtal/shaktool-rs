@@ -2,3 +2,5 @@
 .env
 .vscode
 bot.brain*
+__pycache__
+*.pyc

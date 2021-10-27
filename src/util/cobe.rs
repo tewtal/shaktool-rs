@@ -11,6 +11,8 @@ pub struct Cobe {
 impl Cobe {
     pub fn new() -> Cobe {
         let context: Context = python! {
+            import sys
+            sys.path.insert(1, '.')
             print("Python :: Initializing COBE Brain")
             from cobe.brain import Brain
             b = Brain("bot.brain")
@@ -67,8 +69,10 @@ pub async fn message_hook(ctx: &serenity::client::Context, msg: &serenity::model
                 data.get::<Cobe>().ok_or("Could not retrieve Cobe instance")?.clone()
             };
         
-            let cobe = cobe_lock.lock().await;
-            cobe.learn(&msg.content);
+            {
+                let cobe = cobe_lock.lock().await;
+                cobe.learn(&msg.content);
+            }
         }
     }
 
