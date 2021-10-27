@@ -41,8 +41,8 @@ impl EventHandler for Handler {
 
     async fn ready(&self, ctx: Context, ready: Ready) {
         info!("Connected as {}", ready.user.name);
-        let a = Activity::streaming("VGM", "https://twitch.tv/fmfunk");
-        let _ = ctx.set_activity(a).await;
+        // let a = Activity::streaming("VGM", "https://twitch.tv/fmfunk");
+        // let _ = ctx.set_activity(a).await;
         
         let _ = ApplicationCommand::set_global_application_commands(&ctx.http, |commands| {
             commands

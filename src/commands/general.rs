@@ -24,11 +24,21 @@ pub async fn version(ctx: &Context, msg: &Message) -> CommandResult {
 pub async fn strat(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let strategies = Strategy::find(args.message()).await?;
     if !strategies.is_empty() {
-        let response = strategies.iter().map(|s| 
-                format!("**{}** *({}/{})* :: <https://crocomi.re/{}>", &s.name, &s.area_name, &s.room_name, &s.id)
-            ).collect::<Vec<String>>().join("\n");
+        let mut output = String::new();
         
-        msg.channel_id.say(&ctx, &response).await?;
+        for s in strategies {
+            let strat_str = format!("**{}** *({}/{})* :: <https://crocomi.re/{}>\n", &s.name, &s.area_name, &s.room_name, &s.id);
+            
+            /* Discord max message length is 2000, so make sure we output before hitting that limit */
+            if output.len() + strat_str.len() >= 2000 {
+                msg.channel_id.say(&ctx, &output).await?;
+                output = String::new();
+            }
+            
+            output.push_str(&strat_str);
+        }
+        
+        msg.channel_id.say(&ctx, &output).await?;
     } else {
         msg.channel_id.say(&ctx, "No strategies found for that search string").await?;
     }
@@ -44,11 +54,20 @@ pub async fn strat(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 pub async fn wiki(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let titles = crate::api::wiki::search_wiki_titles(args.message()).await?;
     if !titles.is_empty() {
-        let response = titles.iter().map(|t|
-            format!("**{}** :: <https://wiki.supermetroid.run/{}>", &t.pretty(), urlencoding::encode(&t.with_underscores()))
-        ).collect::<Vec<String>>().join("\n");
+        let mut output = String::new();
+        for t in titles {
+            let title_str = format!("**{}** :: <https://wiki.supermetroid.run/{}>\n", &t.pretty(), urlencoding::encode(&t.with_underscores()));
 
-        msg.channel_id.say(&ctx, response).await?;
+            /* Discord max message length is 2000, so make sure we output before hitting that limit */
+            if output.len() + title_str.len() >= 2000 {
+                msg.channel_id.say(&ctx, &output).await?;
+                output = String::new();
+            }
+            
+            output.push_str(&title_str);
+        }
+
+        msg.channel_id.say(&ctx, output).await?;
     } else {
         msg.channel_id.say(&ctx, "No wiki pages found for that search string").await?;
     }
