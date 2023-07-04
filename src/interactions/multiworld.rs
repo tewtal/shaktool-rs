@@ -167,7 +167,7 @@ pub async fn interaction_create_multiworld(ctx: &Context, interaction: &Interact
                     let new_msg = command
                         .create_followup_message(&ctx.http, |message| {
                             message
-                                .create_embed(|e| create_embed(&session, e))
+                                .set_embed(create_embed(&session))
                                 .components(|components|
                                     components                                 
                                         .create_action_row(|row|
@@ -286,7 +286,7 @@ pub async fn interaction_create_multiworld(ctx: &Context, interaction: &Interact
                 };
 
                 component.edit_followup_message(&ctx.http, session_msg_id,|message| 
-                    message.create_embed(|e| create_embed(&session, e))
+                    message.set_embed(create_embed(&session))
                 ).await?;
 
                 /* If the session isn't cancelled, update it, otherwise remove it */
@@ -348,7 +348,7 @@ pub async fn interaction_create_multiworld(ctx: &Context, interaction: &Interact
                                 // }).await;
 
                                 component.edit_followup_message(&ctx.http, session_msg_id, |message| 
-                                    message.create_embed(|e| create_embed(&session, e))
+                                    message.set_embed(create_embed(&session))
                                 ).await?;
 
                                 /* send DM's */
@@ -398,7 +398,7 @@ pub async fn interaction_create_multiworld(ctx: &Context, interaction: &Interact
                         if let Some(session_msg) = session.msg.as_ref() {
                             let mut msg = session_msg.clone();
                             let _ = msg.edit(&ctx, |m| {
-                                m.embed(|e| create_embed(&session, e));
+                                m.set_embed(create_embed(&session));
                                 m
                             }).await;
                         }
@@ -415,7 +415,8 @@ pub async fn interaction_create_multiworld(ctx: &Context, interaction: &Interact
     }
 }
 
-fn create_embed<'a>(session: &MultiworldSession, e: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
+fn create_embed<'a>(session: &MultiworldSession) -> CreateEmbed {
+    let mut e = CreateEmbed::default();
     e.title("Multiworld Game");    
     e.description("A new multiworld game has been initiated, react with :thumbsup: to join.\nWhen everyone is ready, the game creator can react with :white_check_mark: to create a session.");
     

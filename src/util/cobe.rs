@@ -45,10 +45,10 @@ impl TypeMapKey for Cobe {
 
 /* Message hook for responding to messages and learn new things */
 pub async fn message_hook(ctx: &serenity::client::Context, msg: &serenity::model::channel::Message) -> CommandResult {
-    if !msg.is_own(&ctx).await {
+    if !msg.is_own(&ctx) {
         if msg.mentions_me(&ctx).await? {    
-            let current_user = &ctx.cache.current_user().await;
-            let arg = &msg.content_safe(&ctx).await.replace(&format!("@{}#{}", current_user.name, current_user.discriminator), "");
+            let current_user = &ctx.cache.current_user();
+            let arg = &msg.content_safe(&ctx).replace(&format!("@{}#{}", current_user.name, current_user.discriminator), "");
 
             let cobe_lock = {
                 let data = ctx.data.read().await;

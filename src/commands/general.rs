@@ -4,6 +4,7 @@ use serenity::model::channel::Message;
 use serenity::framework::standard::{Args, CommandResult, macros::{group, command}};
 use crate::api::crocomire::Strategy;
 use crate::commands::time::*;
+//use crate::api::openai::*;
 
 #[group]
 #[commands(strat, version, wiki, card, time)]
@@ -102,4 +103,18 @@ pub async fn card(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     Ok(())
 }
 
-
+// #[command]
+// #[description = "Searches the internal wiki database for pages matching the search string"]                
+// #[min_args(1)]
+// #[usage = "<search string>"]
+// #[example = "x-ray climb"]
+// pub async fn ask(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+//     let result = ask_wiki_question(args.message()).await;
+//     if let Ok(result) = result {
+//         msg.channel_id.say(&ctx, &result).await?;
+//     } else {
+//         msg.channel_id.say(&ctx, "No wiki pages found for that search string").await?;
+//         println!("Error: {:?}", result.err().unwrap());
+//     }
+//     Ok(())
+// }

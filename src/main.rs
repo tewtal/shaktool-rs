@@ -21,6 +21,7 @@ mod interactions;
 
 use commands::general::*;
 use commands::leaderboard::*;
+use commands::smz3::*;
 
 use crate::util::cobe::Cobe;
 
@@ -85,7 +86,7 @@ async fn my_help(
 
 
 #[hook]
-async fn dispatch_error(ctx: &Context, msg: &Message, error: DispatchError) {
+async fn dispatch_error(ctx: &Context, msg: &Message, error: DispatchError, _command_name: &str) {
     if let DispatchError::Ratelimited(info) = error {
         // We notify them only once.
         if info.is_first_try {
@@ -116,7 +117,7 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber).expect("Failed to start the logger");
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
 
-    let http = Http::new_with_token(&token);
+    let http = Http::new(&token);
 
     let (owners, bot_id) = match http.get_current_application_info().await {
         Ok(info) => {
@@ -144,14 +145,16 @@ async fn main() {
         .normal_message(normal_message_hook)
         .help(&MY_HELP)
         .group(&GENERAL_GROUP)
-        .group(&LEADERBOARD_GROUP);
+        .group(&LEADERBOARD_GROUP)
+        .group(&RANDOMIZER_GROUP);
 
     let application_id: u64 = env::var("APPLICATION_ID")
         .expect("Expected an application id in the environment")
         .parse()
         .expect("application id is not a valid id");
 
-    let mut client = Client::builder(&token)
+    let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
+    let mut client = Client::builder(&token, intents)
         .framework(framework)
         .event_handler(Handler)
         .application_id(application_id)
