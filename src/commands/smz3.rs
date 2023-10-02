@@ -62,7 +62,7 @@ fn parse_args(args: &mut Args, request: &mut RandomizerRequest) -> CommandResult
                     "race" => request.race = value.parse::<bool>()?,
                     "beta" => request.beta = value.parse::<bool>()?,
                     "start" => request.initialitems = Some(value.to_string()),
-                    "mode" => request.gamemode = GameMode::from_str(value)?,
+                    "gamemode" => request.gamemode = GameMode::from_str(value)?,
                     "names" => request.names = Some(value.split(',').map(|s| s.to_string()).collect()),
                     _ => {}
                 }

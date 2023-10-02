@@ -3,6 +3,7 @@ use serde_json;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use strum_macros::EnumString;
+use tracing::{error, info, debug};
 use crate::util::slugid;
 type ApiError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -218,10 +219,15 @@ pub struct RandomizerResponse {
 
 impl RandomizerResponse {
     pub fn permalink(&self) -> String {
+	let seed_link = match self.mode.as_str() {
+            "multiworld" => "multiworld".to_string(),
+            _ => "seed".to_string()
+        };
+
         if self.beta {
-            format!("https://beta.samus.link/seed/{}", slugid::create(&self.guid).unwrap())
+            format!("https://beta.samus.link/{}/{}", seed_link, slugid::create(&self.guid).unwrap())
         } else {
-            format!("https://samus.link/seed/{}", slugid::create(&self.guid).unwrap())
+            format!("https://samus.link/{}/{}", seed_link, slugid::create(&self.guid).unwrap())
         }        
     }
 }
@@ -275,23 +281,26 @@ impl RandomizerRequest {
             "https://samus.link/api/randomizers/smz3/generate"
         };
 
-        let mut json = serde_json::to_string(&self)?;
+        let mut json_object = serde_json::to_value(&self)?.as_object().unwrap().clone();;
 
         if self.gamemode == GameMode::Multiworld
         {
             if let Some(names) = &self.names {
-                self.players = names.len() as i64;
-                let json_object = serde_json::to_value(&self)?.as_object().ok_or("Could not map json to object".into())?;
                 for (i, name) in names.iter().enumerate() {
-                    json_object.insert(format!("player-{}", i), serde_json::from_str(&name));
+                    let name_str = format!("player-{}", i);
+                    let name_object = serde_json::to_value(&name)?;
+                    json_object.insert(name_str, name_object);
                 }
 
-                json = serde_json::to_string(&json_object)?;
+                let player_count = format!("{}", names.len());
+                json_object["players"] = serde_json::from_str(&player_count)?;
+		
             }
         }
 
+
         let res = client.post(url)
-            .body(reqwest::Body::from(&json))
+            .json(&json_object)
             .send()
             .await?;
         let body = res.text().await?;
