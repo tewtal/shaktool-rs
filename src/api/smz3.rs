@@ -165,7 +165,7 @@ pub enum KeyShuffle {
     Keysanity,
 }
 
-#[derive(EnumString, Serialize, Deserialize, Debug)]
+#[derive(EnumString, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 #[strum(ascii_case_insensitive)]
 pub enum GameMode {
@@ -277,18 +277,21 @@ impl RandomizerRequest {
 
         let mut json = serde_json::to_string(&self)?;
 
-        if let Some(names) = &self.names && self.gamemode == GameMode::Multiworld {
-            self.players = names.len() as i64;
-            let json_object = serde_json::to_value(&self)?.as_object()?;
-            for (i, name) in names.iter().enumerate() {
-                json_object.insert(format!("player-{}", i), name);
-            }
+        if self.gamemode == GameMode::Multiworld
+        {
+            if let Some(names) = &self.names {
+                self.players = names.len() as i64;
+                let json_object = serde_json::to_value(&self)?.as_object().ok_or("Could not map json to object".into())?;
+                for (i, name) in names.iter().enumerate() {
+                    json_object.insert(format!("player-{}", i), serde_json::from_str(&name));
+                }
 
-            json = serde_json::to_string(&json_object)?;
+                json = serde_json::to_string(&json_object)?;
+            }
         }
 
         let res = client.post(url)
-            .body(&json)
+            .body(reqwest::Body::from(&json))
             .send()
             .await?;
         let body = res.text().await?;

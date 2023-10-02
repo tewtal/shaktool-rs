@@ -3,7 +3,7 @@ use serenity::prelude::*;
 use serenity::model::channel::Message;
 use serenity::builder::CreateEmbed;
 use serenity::framework::standard::{Args, CommandResult, macros::{group, command}};
-use crate::api::smz3::{RandomizerRequest, GanonVulnerable, Goal, KeyShuffle, MorphLocation, OpenTourian, OpenTower, SMLogic, SwordLocation};
+use crate::api::smz3::{RandomizerRequest, GameMode, GanonVulnerable, Goal, KeyShuffle, MorphLocation, OpenTourian, OpenTower, SMLogic, SwordLocation};
 
 #[group]
 #[commands(smz3)]
