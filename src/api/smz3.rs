@@ -2,7 +2,6 @@ use reqwest;
 use serde_json;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
-use std::str::FromStr;
 use strum_macros::EnumString;
 use crate::util::slugid;
 type ApiError = Box<dyn std::error::Error + Send + Sync>;
@@ -191,7 +190,9 @@ pub struct RandomizerRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub initialitems: Option<String>,
     #[serde(skip)]
-    pub beta: bool
+    pub beta: bool,
+    #[serde(skip)]
+    pub names: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -261,6 +262,7 @@ impl RandomizerRequest {
             swordlocation: SwordLocation::Random,
             initialitems: None,
             beta: false,
+            names: None,
         }
     }
 
@@ -272,9 +274,21 @@ impl RandomizerRequest {
         } else {
             "https://samus.link/api/randomizers/smz3/generate"
         };
-        
+
+        let mut json = serde_json::to_string(&self)?;
+
+        if let Some(names) = &self.names && self.gamemode == GameMode::Multiworld {
+            self.players = names.len() as i64;
+            let json_object = serde_json::to_value(&self)?.as_object()?;
+            for (i, name) in names.iter().enumerate() {
+                json_object.insert(format!("player-{}", i), name);
+            }
+
+            json = serde_json::to_string(&json_object)?;
+        }
+
         let res = client.post(url)
-            .json(&self)
+            .body(&json)
             .send()
             .await?;
         let body = res.text().await?;

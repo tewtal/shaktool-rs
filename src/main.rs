@@ -1,15 +1,9 @@
 use std::{collections::{HashMap, HashSet}, env, sync::Arc};
 use tokio::sync::{Mutex, RwLock};
-use serenity::{async_trait, client::bridge::gateway::ShardManager, framework::{standard::macros::{help, hook}, standard::{CommandGroup, CommandResult, DispatchError, Args, HelpOptions, help_commands}, StandardFramework}, http::Http, model::{
+use serenity::{model::application::command::Command, model::application::interaction::Interaction, async_trait, client::bridge::gateway::ShardManager, framework::{standard::macros::{help, hook}, standard::{CommandGroup, CommandResult, DispatchError, Args, HelpOptions, help_commands}, StandardFramework}, http::Http, model::{
         event::ResumedEvent, 
         gateway::Ready,
-        interactions::{
-            application_command::{
-                ApplicationCommand,
-            },
-            Interaction,
-        },
-    }, model::{prelude::*}, prelude::*};
+    }, model::prelude::*, prelude::*};
 
 use tracing::{error, info, debug};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
@@ -45,7 +39,7 @@ impl EventHandler for Handler {
         // let a = Activity::streaming("VGM", "https://twitch.tv/fmfunk");
         // let _ = ctx.set_activity(a).await;
         
-        let _ = ApplicationCommand::set_global_application_commands(&ctx.http, |commands| {
+        let _ = Command::set_global_application_commands(&ctx.http, |commands| {
             commands
                 // Multiworld command is disabled for now - was only used for testing stuff
                 //.create_application_command(interactions::multiworld::create_multiworld_command)

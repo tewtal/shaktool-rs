@@ -87,7 +87,7 @@ pub async fn card(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         msg.channel_id.send_message(&ctx, |m| {
             m.embed(|e| {
                 e.title(&card.name);
-                e.field("Mana cost", &card.mana_cost.as_ref().unwrap_or(&"None".into()).replace("{", "").replace("}",""), true);
+                e.field("Mana cost", &card.mana_cost.as_ref().unwrap_or(&"None".into()).replace(&['{', '}'], ""), true);
                 e.field("Type", &card.card_type, true);
                 e.field("Card text", &card.text, false);
                 if let Some(image_url) = &card.image_url {

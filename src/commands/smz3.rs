@@ -1,10 +1,9 @@
 use std::str::FromStr;
-use serenity::framework::standard::Command;
 use serenity::prelude::*;
 use serenity::model::channel::Message;
 use serenity::builder::CreateEmbed;
 use serenity::framework::standard::{Args, CommandResult, macros::{group, command}};
-use crate::api::smz3::{RandomizerRequest, RandomizerResponse, GameMode, GanonVulnerable, Goal, KeyShuffle, MorphLocation, OpenTourian, OpenTower, SMLogic, SwordLocation};
+use crate::api::smz3::{RandomizerRequest, GanonVulnerable, Goal, KeyShuffle, MorphLocation, OpenTourian, OpenTower, SMLogic, SwordLocation};
 
 #[group]
 #[commands(smz3)]
@@ -38,31 +37,33 @@ fn parse_args(args: &mut Args, request: &mut RandomizerRequest) -> CommandResult
                         if let Ok(value_int) = value.parse::<i64>() {
                             request.ganonvulnerable = GanonVulnerable::from_int(value_int);
                         } else {
-                            request.ganonvulnerable = GanonVulnerable::from_str(&value)?
+                            request.ganonvulnerable = GanonVulnerable::from_str(value)?
                         }
                     }                    
-                    "goal" => request.goal = Goal::from_str(&value)?,
-                    "keysanity" => request.keyshuffle = if value.parse::<bool>()? == true { KeyShuffle::Keysanity } else { KeyShuffle::None },
-                    "morph" => request.morphlocation = MorphLocation::from_str(&value)?,
+                    "goal" => request.goal = Goal::from_str(value)?,
+                    "keysanity" => request.keyshuffle = if value.parse::<bool>()? { KeyShuffle::Keysanity } else { KeyShuffle::None },
+                    "morph" => request.morphlocation = MorphLocation::from_str(value)?,
                     "tourian" => {
                         if let Ok(value_int) = value.parse::<i64>() {
                             request.opentourian = OpenTourian::from_int(value_int);
                         } else {
-                            request.opentourian = OpenTourian::from_str(&value)?
+                            request.opentourian = OpenTourian::from_str(value)?
                         }
                     },
                     "tower" => {
                         if let Ok(value_int) = value.parse::<i64>() {
                             request.opentower = OpenTower::from_int(value_int);
                         } else {
-                            request.opentower = OpenTower::from_str(&value)?
+                            request.opentower = OpenTower::from_str(value)?
                         }
                     }
-                    "logic" => request.smlogic = SMLogic::from_str(&value)?,
-                    "sword" => request.swordlocation = SwordLocation::from_str(&value)?,
+                    "logic" => request.smlogic = SMLogic::from_str(value)?,
+                    "sword" => request.swordlocation = SwordLocation::from_str(value)?,
                     "race" => request.race = value.parse::<bool>()?,
                     "beta" => request.beta = value.parse::<bool>()?,
                     "start" => request.initialitems = Some(value.to_string()),
+                    "mode" => request.gamemode = GameMode::from_str(value)?,
+                    "names" => request.names = Some(value.split(',').map(|s| s.to_string()).collect()),
                     _ => {}
                 }
             }
