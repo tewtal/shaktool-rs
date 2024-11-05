@@ -19,9 +19,10 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 
 // Custom user data passed to all command functions
 pub struct Data {
+    pub cobe: Arc<Mutex<Cobe>>,
 }
 
-async fn event_handler(ctx: &serenity::Context, event: &serenity::FullEvent, _framework: poise::FrameworkContext<'_, Data, Error>, _data: &Data) -> Result<(), Error> 
+async fn event_handler(ctx: &serenity::Context, event: &serenity::FullEvent, _framework: poise::FrameworkContext<'_, Data, Error>, data: &Data) -> Result<(), Error> 
 {
     match event {
         serenity::FullEvent::InteractionCreate { interaction: _ } => {
@@ -32,8 +33,8 @@ async fn event_handler(ctx: &serenity::Context, event: &serenity::FullEvent, _fr
             info!("Connected as {}", data_about_bot.user.name);
         },
         serenity::FullEvent::Message { new_message, .. } => {
-            if !new_message.author.bot && new_message.content.contains("<@") {
-                if let Err(e) = util::cobe::message_hook(ctx, new_message).await {
+            if !new_message.author.bot && new_message.mentions_me(ctx).await? {
+                if let Err(e) = util::cobe::message_hook(ctx, new_message, data).await {
                     debug!("Cobe message handler error: {:?}", e);
                 }
             }
@@ -104,12 +105,20 @@ async fn main() {
         },
         event_handler: |ctx, event, framework, data| {
             Box::pin(event_handler(ctx, event, framework, data))
-        },
+        },        
         ..Default::default()
     };
 
     let framework = poise::Framework::builder()
         .options(options)
+        .setup(|_ctx, _ready, _framework| {
+            Box::pin(async move {
+                let data = Data {
+                    cobe: Arc::new(Mutex::new(Cobe::new())),
+                };
+                Ok(data)
+            })
+        })
         .build();
 
     let application_id: ApplicationId = env::var("APPLICATION_ID")
@@ -125,13 +134,6 @@ async fn main() {
         .await
         .expect("Error creating client");
     
-    {
-        let mut data = client.data.write().await;
-        // data.insert::<interactions::multiworld::MultiworldSessionKey>(Arc::new(RwLock::new(HashMap::new())));
-        // data.insert::<interactions::multiworld::MultiworldSettingsSessionKey>(Arc::new(RwLock::new(HashMap::new())));
-        data.insert::<Cobe>(Arc::new(Mutex::new(Cobe::new())));
-    }
-
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
     });

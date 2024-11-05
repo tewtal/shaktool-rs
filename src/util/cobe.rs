@@ -2,7 +2,7 @@ use inline_python::{Context, python};
 use serenity::prelude::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::{Error};
+use crate::{Data, Error};
 
 pub struct Cobe {
     context: Context
@@ -44,7 +44,7 @@ impl TypeMapKey for Cobe {
 }
 
 /* Message hook for responding to messages and learn new things */
-pub async fn message_hook(ctx: &serenity::client::Context, msg: &serenity::model::channel::Message) -> Result<(), Error> {
+pub async fn message_hook(ctx: &serenity::client::Context, msg: &serenity::model::channel::Message, data: &Data) -> Result<(), Error> {
     if msg.author.id != ctx.cache.current_user().id {
         if msg.mentions_me(&ctx).await? {    
             
@@ -53,11 +53,12 @@ pub async fn message_hook(ctx: &serenity::client::Context, msg: &serenity::model
                 &msg.content_safe(ctx).replace(&format!("@{}#{}", current_user.name, current_user.discriminator.unwrap()), "")
             };
 
-            let cobe_lock = {
-                let data = ctx.data.read().await;
-                data.get::<Cobe>().ok_or("Could not retrieve Cobe instance")?.clone()
-            };
+            // let cobe_lock = {
+            //     let data = ctx.data.read().await;
+            //     data.get::<Cobe>().ok_or("Could not retrieve Cobe instance")?.clone()
+            // };
 
+            let cobe_lock = &data.cobe;
             let reply = {
                 let cobe = cobe_lock.lock().await;
                 cobe.learn(arg.trim());                
@@ -67,11 +68,7 @@ pub async fn message_hook(ctx: &serenity::client::Context, msg: &serenity::model
             let _ = msg.channel_id.say(&ctx, reply).await;
             
         } else {
-            let cobe_lock = {
-                let data = ctx.data.read().await;
-                data.get::<Cobe>().ok_or("Could not retrieve Cobe instance")?.clone()
-            };
-        
+            let cobe_lock = &data.cobe;    
             {
                 let cobe = cobe_lock.lock().await;
                 cobe.learn(&msg.content);
