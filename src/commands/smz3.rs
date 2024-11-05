@@ -3,8 +3,8 @@ use poise::serenity_prelude as serenity;
 use poise::command;
 use crate::api::smz3::{RandomizerRequest, GameMode, GanonVulnerable, Goal, KeyShuffle, MorphLocation, OpenTourian, OpenTower, SMLogic, SwordLocation};
 
+/// Generates a SMZ3 seed
 #[command(slash_command)]
-#[description = "Generates a SMZ3 seed"]
 pub async fn smz3(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
     let mut request = RandomizerRequest::default();
     match parse_args(&args, &mut request) {

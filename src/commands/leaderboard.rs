@@ -1,10 +1,12 @@
-use poise::serenity_prelude as serenity;
 use poise::command;
+use poise::CreateReply;
+use ::serenity::all::CreateEmbed;
 use crate::api::wiki;
+use crate::{Context, Error};
 
+/// Lists the top 10 players for a given category
 #[command(slash_command)]
-#[description = "Lists the top 10 players for a given category"]
-pub async fn top(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+pub async fn top(ctx: Context<'_>, args: String) -> Result<(), Error> {
     let records = wiki::get_wiki_leaderboard().await?;
     let category = args.to_lowercase();
 
@@ -28,9 +30,9 @@ pub async fn top(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::
     Ok(())
 }
 
+/// Lists all records for a given player
 #[command(slash_command)]
-#[description = "Lists all records for a given player"]
-pub async fn records(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+pub async fn records(ctx: Context<'_>, args: String) -> Result<(), Error> {
     let records = wiki::get_wiki_leaderboard().await?;
     let runner = args.to_lowercase();
 

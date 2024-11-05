@@ -1,7 +1,9 @@
+use poise::command;
+use poise::CreateReply;
+use ::serenity::all::CreateEmbed;
 use serde_json::Map;
 use serenity::prelude::*;
 use serenity::model::{channel::{ReactionType, Message, Reaction}, id::{MessageId, UserId}, prelude::User};
-use serenity::{builder::{CreateEmbed}, framework::standard::{CommandResult, macros::{command, group}}};
 use std::{collections::{HashMap}, error::Error};
 use maplit::hashmap;
 use tracing::{error, info};
@@ -26,24 +28,15 @@ impl TypeMapKey for MultiworldSessionKey {
     type Value = Arc<RwLock<HashMap<MessageId, MultiworldSession>>>;
 }
 
-#[group]
-#[commands(mw)]
-struct Multiworld;
-
-#[command]
-#[bucket = "multiworld"]
-#[description = "Creates a new Multiworld game proposal and enables people to join before creating a new server session.\n\
-                ***logic*** can be either **normal** or **hard** and defaults to **normal** if omitted.\n\
-                ***game*** can be either **smz3** or **sm** and defaults to **smz3** if omitted.\n"]
-#[min_args(0)]
-#[max_args(2)]
-#[usage = "<logic> <game>"]
-#[example = "normal smz3"]
-pub async fn mw(ctx: &Context, msg: &Message) -> CommandResult {
+/// Creates a new Multiworld game proposal and enables people to join before creating a new server session.
+/// ***logic*** can be either **normal** or **hard** and defaults to **normal** if omitted.
+/// ***game*** can be either **smz3** or **sm** and defaults to **smz3** if omitted.
+#[command(slash_command)]
+pub async fn mw(ctx: Context<'_>, logic: Option<String>, game: Option<String>) -> Result<(), Error> {
     let mut session = MultiworldSession {
-        author_name: format!("{}#{}", &msg.author.name, &msg.author.discriminator),
-        author_id: msg.author.id,
-        logic: "normal".to_owned(),
+        author_name: format!("{}#{}", &ctx.author().name, &ctx.author().discriminator),
+        author_id: ctx.author().id,
+        logic: logic.unwrap_or_else(|| "normal".to_owned()),
         status: 0,
         players: HashMap::new(),
         link: None,
@@ -51,11 +44,11 @@ pub async fn mw(ctx: &Context, msg: &Message) -> CommandResult {
         error: None
     };
     
-    let base_msg = msg.channel_id.say(&ctx, "A new multiworld session thread has been started").await?;
+    let base_msg = ctx.say("A new multiworld session thread has been started").await?;
 
     let mut map = Map::new();
     map.insert("name".to_string(), "Multiworld Game #12345".to_string().into());
-    let thread_id = ctx.http.create_public_thread(*msg.channel_id.as_u64(), *base_msg.id.as_u64(), &map).await?;
+    let thread_id = ctx.http.create_public_thread(*ctx.channel_id().as_u64(), *base_msg.id.as_u64(), &map).await?;
 
     let new_msg = thread_id.send_message(&ctx, |m| {
         m.embed(|e| create_embed(&session, e));

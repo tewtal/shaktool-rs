@@ -1,15 +1,6 @@
-use serenity::builder::CreateApplicationCommand;
-use serenity::{model::{
-    interactions::{
-        application_command::{
-            ApplicationCommandOptionType,
-        },
-        Interaction,
-        InteractionResponseType,
-    },
-}, model::{interactions::message_component::ButtonStyle, prelude::*}, prelude::*};
-
-
+use poise::command;
+use poise::CreateReply;
+use ::serenity::all::CreateEmbed;
 use serenity::model::{channel::{Message}, id::{MessageId, UserId}, prelude::User};
 use serenity::{builder::{CreateEmbed}};
 use std::{collections::{HashMap}};
@@ -18,7 +9,6 @@ use tracing::{error, debug};
 use crate::util::slugid;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
 
 #[derive(Clone)]
 pub struct MultiworldSession {
@@ -43,26 +33,46 @@ impl TypeMapKey for MultiworldSettingsSessionKey {
     type Value = Arc<RwLock<HashMap<MessageId, MessageId>>>;
 }
 
-pub fn create_multiworld_command(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
-    command
-        .name("multiworld")
-        .description("Create multiworld session")
-        .create_option(|option|
-            option
-                .name("logic")
-                .kind(ApplicationCommandOptionType::String)
-                .add_string_choice("Normal", "normal")
-                .add_string_choice("Hard", "hard")
-                .required(true)
-        )
-        .create_option(|option|
-            option
-                .name("game")
-                .kind(ApplicationCommandOptionType::String)
-                .add_string_choice("SMZ3", "smz3")
-                .add_string_choice("SM", "sm")
-                .required(true)                
-        )
+#[command(slash_command)]
+pub async fn create_multiworld_command(ctx: Context<'_>, logic: Option<String>, game: Option<String>) -> Result<(), Error> {
+    let mut session = MultiworldSession {
+        author_name: format!("{}#{}", &ctx.author().name, &ctx.author().discriminator),
+        author_id: ctx.author().id,
+        logic: logic.unwrap_or_else(|| "normal".to_owned()),
+        game: game.unwrap_or_else(|| "smz3".to_owned()),
+        status: 0,
+        players: HashMap::new(),
+        link: None,
+        msg: None,
+        error: None
+    };
+
+    let base_msg = ctx.say("A new multiworld session thread has been started").await?;
+
+    let mut map = Map::new();
+    map.insert("name".to_string(), "Multiworld Game #12345".to_string().into());
+    let thread_id = ctx.http.create_public_thread(*ctx.channel_id().as_u64(), *base_msg.id.as_u64(), &map).await?;
+
+    let new_msg = thread_id.send_message(&ctx, |m| {
+        m.embed(|e| create_embed(&session, e));
+        m.reactions(vec!['👍', '✅', '❌']);
+        m
+    }).await.unwrap();
+
+    let new_msg_id = new_msg.id;
+    info!("New message id: {}", new_msg_id);
+
+    /* We cache this message here to reduce API calls later down the line */
+    session.msg = Some(new_msg);
+
+    {
+        let data = ctx.data.read().await;
+        let sessions_lock = data.get::<MultiworldSessionKey>().unwrap().clone();
+        let mut sessions = sessions_lock.write().await;
+        sessions.insert(new_msg_id, session);
+    }
+
+    Ok(())
 }
 
 pub async fn interaction_create_multiworld(ctx: &Context, interaction: &Interaction) -> Result<bool, Box<dyn std::error::Error>> {
