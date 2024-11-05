@@ -73,7 +73,7 @@ pub async fn card(ctx: Context<'_>, args: String) -> Result<(), Error> {
     if let Some(card) = result.cards.first() {
         let mut e = CreateEmbed::new()
             .title(&card.name)
-            .field("Mana cost", &card.mana_cost.as_ref().unwrap_or(&"None".into()).replace(&['{', '}'], ""), true)
+            .field("Mana cost", card.mana_cost.as_ref().unwrap_or(&"None".into()).replace(['{', '}'], ""), true)
             .field("Type", &card.card_type, true)
             .field("Card text", &card.text, false);
 

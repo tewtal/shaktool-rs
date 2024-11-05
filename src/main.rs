@@ -1,8 +1,7 @@
-use std::{collections::{HashMap, HashSet}, env, sync::{atomic::AtomicU32, Arc}};
-use ::serenity::{all::ApplicationId, prelude::TypeMapKey};
-use tokio::sync::{Mutex, RwLock};
+use std::{collections::HashSet, env, sync::Arc};
+use ::serenity::all::ApplicationId;
+use tokio::sync::Mutex;
 use poise::serenity_prelude as serenity;
-use poise::Framework;
 use tracing::{error, info, debug};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
@@ -20,13 +19,12 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 
 // Custom user data passed to all command functions
 pub struct Data {
-    poise_mentions: AtomicU32,
 }
 
-async fn event_handler(ctx: &serenity::Context, event: &serenity::FullEvent, _framework: poise::FrameworkContext<'_, Data, Error>, data: &Data) -> Result<(), Error> 
+async fn event_handler(ctx: &serenity::Context, event: &serenity::FullEvent, _framework: poise::FrameworkContext<'_, Data, Error>, _data: &Data) -> Result<(), Error> 
 {
     match event {
-        serenity::FullEvent::InteractionCreate { interaction } => {
+        serenity::FullEvent::InteractionCreate { interaction: _ } => {
             // Return if handler returns true to skip further processing since this interaction has been handled already
             //interactions::multiworld::interaction_create_multiworld(ctx, interaction).await.unwrap_or(false)
         },
@@ -34,11 +32,9 @@ async fn event_handler(ctx: &serenity::Context, event: &serenity::FullEvent, _fr
             info!("Connected as {}", data_about_bot.user.name);
         },
         serenity::FullEvent::Message { new_message, .. } => {
-            if !new_message.author.bot {
-                if new_message.content.contains("<@") {
-                    if let Err(e) = util::cobe::message_hook(ctx, new_message).await {
-                        debug!("Cobe message handler error: {:?}", e);
-                    }
+            if !new_message.author.bot && new_message.content.contains("<@") {
+                if let Err(e) = util::cobe::message_hook(ctx, new_message).await {
+                    debug!("Cobe message handler error: {:?}", e);
                 }
             }
         },
@@ -76,7 +72,7 @@ async fn main() {
 
     let http = serenity::Http::new(&token);
 
-    let (owners, bot_id) = match http.get_current_application_info().await {
+    let (_owners, _bot_id) = match http.get_current_application_info().await {
         Ok(info) => {
             let mut owners = HashSet::new();
             if let Some(team) = info.team {
@@ -96,6 +92,9 @@ async fn main() {
         commands: {
             let mut commands = vec![help()];
             commands.extend(commands::general::general_commands());
+            commands.extend(commands::smz3::smz3_commands());
+            commands.extend(commands::leaderboard::leaderboard_commands());
+            commands.extend(vec![commands::time::time()]);
             commands
         },
         prefix_options: poise::PrefixFrameworkOptions {
@@ -132,8 +131,6 @@ async fn main() {
         // data.insert::<interactions::multiworld::MultiworldSettingsSessionKey>(Arc::new(RwLock::new(HashMap::new())));
         data.insert::<Cobe>(Arc::new(Mutex::new(Cobe::new())));
     }
-
-    let shard_manager = client.shard_manager.clone();
 
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");

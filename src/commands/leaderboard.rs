@@ -1,6 +1,4 @@
 use poise::command;
-use poise::CreateReply;
-use ::serenity::all::CreateEmbed;
 use crate::api::wiki;
 use crate::{Context, Data, Error};
 

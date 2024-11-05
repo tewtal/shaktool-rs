@@ -2,9 +2,8 @@ use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
 use phf::phf_map;
 use std::collections::HashMap;
-use poise::serenity_prelude as serenity;
 use poise::command;
-use crate::{Context, Error, Data};
+use crate::{Context, Error};
 
 const TZMAP: phf::Map<&'static str, chrono_tz::Tz> = phf_map! {
     "EST" => chrono_tz::US::Eastern,

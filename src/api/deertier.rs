@@ -3,6 +3,7 @@ use serde_json;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct DeerTierRecord {
     #[serde(rename="ID")]
     pub id: i32,

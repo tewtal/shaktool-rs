@@ -3,11 +3,11 @@ use serde_json;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use strum_macros::EnumString;
-use tracing::{error, info, debug};
 use crate::util::slugid;
 type ApiError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct Randomizer {
     pub id: String,
     pub name: String,
@@ -25,6 +25,7 @@ pub enum RandomizerOptionType {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct RandomizerOption {
     pub key: String,
     pub description: String,
@@ -197,6 +198,7 @@ pub struct RandomizerRequest {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct RandomizerResponse {
     pub id: i64,
     pub guid: String,
@@ -233,6 +235,7 @@ impl RandomizerResponse {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct RandomizerWorld {
     pub id: i64,
     #[serde(rename = "worldId")]
@@ -281,14 +284,14 @@ impl RandomizerRequest {
             "https://samus.link/api/randomizers/smz3/generate"
         };
 
-        let mut json_object = serde_json::to_value(&self)?.as_object().unwrap().clone();;
+        let mut json_object = serde_json::to_value(self)?.as_object().unwrap().clone();
 
         if self.gamemode == GameMode::Multiworld
         {
             if let Some(names) = &self.names {
                 for (i, name) in names.iter().enumerate() {
                     let name_str = format!("player-{}", i);
-                    let name_object = serde_json::to_value(&name)?;
+                    let name_object = serde_json::to_value(name)?;
                     json_object.insert(name_str, name_object);
                 }
 

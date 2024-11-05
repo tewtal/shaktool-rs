@@ -1,5 +1,4 @@
 use inline_python::{Context, python};
-use serenity::framework::standard::CommandResult;
 use serenity::prelude::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
