@@ -1,90 +1,72 @@
-// Commands that doesn't need their own module
-use serenity::prelude::*;
-use serenity::model::channel::Message;
-use serenity::framework::standard::{Args, CommandResult, macros::{group, command}};
+use poise::serenity_prelude as serenity;
+use poise::command;
 use crate::api::crocomire::Strategy;
 use crate::commands::time::*;
-//use crate::api::openai::*;
 
-#[group]
-#[commands(strat, version, wiki, card, time)]
-struct General;
-
-const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
-#[command]
-pub async fn version(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.channel_id.say(&ctx, format!("**Shaktool** {} *by total*", VERSION.unwrap_or("<unknown version>"))).await?;
+#[command(slash_command)]
+pub async fn version(ctx: poise::Context<'_>) -> Result<(), serenity::Error> {
+    let response = format!("**Shaktool** {} *by total*", VERSION.unwrap_or("<unknown version>"));
+    ctx.say(response).await?;
     Ok(())
 }
 
-#[command]
-#[description = "Searches the crocomi.re database for a Super Metroid strategy"]                
-#[min_args(1)]
-#[usage = "<search string>"]
-#[example = "bomb jump"]
-pub async fn strat(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let strategies = Strategy::find(args.message()).await?;
+#[command(slash_command)]
+#[description = "Searches the crocomi.re database for a Super Metroid strategy"]
+pub async fn strat(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+    let strategies = Strategy::find(&args).await?;
     if !strategies.is_empty() {
         let mut output = String::new();
-        
+
         for s in strategies {
             let strat_str = format!("**{}** *({}/{})* :: <https://crocomi.re/{}>\n", &s.name, &s.area_name, &s.room_name, &s.id);
-            
-            /* Discord max message length is 2000, so make sure we output before hitting that limit */
+
             if output.len() + strat_str.len() >= 2000 {
-                msg.channel_id.say(&ctx, &output).await?;
+                ctx.say(&output).await?;
                 output = String::new();
             }
-            
+
             output.push_str(&strat_str);
         }
-        
-        msg.channel_id.say(&ctx, &output).await?;
+
+        ctx.say(&output).await?;
     } else {
-        msg.channel_id.say(&ctx, "No strategies found for that search string").await?;
+        ctx.say("No strategies found for that search string").await?;
     }
 
     Ok(())
 }
 
-#[command]
-#[description = "Searches the Super Metroid Wiki for pages matching the search string"]                
-#[min_args(1)]
-#[usage = "<search string>"]
-#[example = "mockball"]
-pub async fn wiki(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let titles = crate::api::wiki::search_wiki_titles(args.message()).await?;
+#[command(slash_command)]
+#[description = "Searches the Super Metroid Wiki for pages matching the search string"]
+pub async fn wiki(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+    let titles = crate::api::wiki::search_wiki_titles(&args).await?;
     if !titles.is_empty() {
         let mut output = String::new();
         for t in titles {
             let title_str = format!("**{}** :: <https://wiki.supermetroid.run/{}>\n", &t.pretty(), urlencoding::encode(&t.with_underscores()));
 
-            /* Discord max message length is 2000, so make sure we output before hitting that limit */
             if output.len() + title_str.len() >= 2000 {
-                msg.channel_id.say(&ctx, &output).await?;
+                ctx.say(&output).await?;
                 output = String::new();
             }
-            
+
             output.push_str(&title_str);
         }
 
-        msg.channel_id.say(&ctx, output).await?;
+        ctx.say(output).await?;
     } else {
-        msg.channel_id.say(&ctx, "No wiki pages found for that search string").await?;
+        ctx.say("No wiki pages found for that search string").await?;
     }
 
     Ok(())
 }
 
-#[command]
-#[description = "Searches for an MTG card"]                
-#[min_args(1)]
-#[usage = "<search string>"]
-#[example = "splinter twin"]
-pub async fn card(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let result = crate::api::mtg::get_card(args.message()).await?;
+#[command(slash_command)]
+#[description = "Searches for an MTG card"]
+pub async fn card(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+    let result = crate::api::mtg::get_card(&args).await?;
     if let Some(card) = result.cards.first() {
-        msg.channel_id.send_message(&ctx, |m| {
+        ctx.send(|m| {
             m.embed(|e| {
                 e.title(&card.name);
                 e.field("Mana cost", &card.mana_cost.as_ref().unwrap_or(&"None".into()).replace(&['{', '}'], ""), true);
@@ -98,23 +80,7 @@ pub async fn card(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             m
         }).await?;
     } else {
-        msg.channel_id.say(&ctx, "Didn't find any cards matching that search.").await?;
+        ctx.say("Didn't find any cards matching that search.").await?;
     }
     Ok(())
 }
-
-// #[command]
-// #[description = "Searches the internal wiki database for pages matching the search string"]                
-// #[min_args(1)]
-// #[usage = "<search string>"]
-// #[example = "x-ray climb"]
-// pub async fn ask(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-//     let result = ask_wiki_question(args.message()).await;
-//     if let Ok(result) = result {
-//         msg.channel_id.say(&ctx, &result).await?;
-//     } else {
-//         msg.channel_id.say(&ctx, "No wiki pages found for that search string").await?;
-//         println!("Error: {:?}", result.err().unwrap());
-//     }
-//     Ok(())
-// }

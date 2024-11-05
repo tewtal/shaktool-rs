@@ -29,7 +29,8 @@ dtparse = "1.5.0"
 kuchiki = "0.8"
 cached = "0.44"
 phf = { version = "0.11", features = ["macros"] }
-serenity = { git = "https://github.com/serenity-rs/serenity.git", features = ["unstable_discord_api"] }
+serenity = "0.11"
+poise = "0.5"
 #async-openai = "0.12"
 #ndarray = "0.15"
 #ndarray-linalg = { version = "0.16", features = ["intel-mkl-static"] }

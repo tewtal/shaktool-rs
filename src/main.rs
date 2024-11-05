@@ -1,10 +1,7 @@
 use std::{collections::{HashMap, HashSet}, env, sync::Arc};
 use tokio::sync::{Mutex, RwLock};
-use serenity::{model::application::command::Command, model::application::interaction::Interaction, async_trait, client::bridge::gateway::ShardManager, framework::{standard::macros::{help, hook}, standard::{CommandGroup, CommandResult, DispatchError, Args, HelpOptions, help_commands}, StandardFramework}, http::Http, model::{
-        event::ResumedEvent, 
-        gateway::Ready,
-    }, model::prelude::*, prelude::*};
-
+use poise::serenity_prelude as serenity;
+use poise::Framework;
 use tracing::{error, info, debug};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
@@ -22,44 +19,44 @@ use crate::util::cobe::Cobe;
 pub struct ShardManagerContainer;
 
 impl TypeMapKey for ShardManagerContainer {
-    type Value = Arc<Mutex<ShardManager>>;
+    type Value = Arc<Mutex<serenity::ShardManager>>;
 }
 
 struct Handler;
 
-#[async_trait]
-impl EventHandler for Handler {
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+#[poise::async_trait]
+impl poise::EventHandler for Handler {
+    async fn interaction_create(&self, ctx: serenity::Context, interaction: serenity::Interaction) {
         // Return if handler returns true to skip further processing since this interaction has been handled already
         if interactions::multiworld::interaction_create_multiworld(&ctx, &interaction).await.unwrap_or(false) { return; }
     }
 
-    async fn ready(&self, ctx: Context, ready: Ready) {
+    async fn ready(&self, ctx: serenity::Context, ready: serenity::Ready) {
         info!("Connected as {}", ready.user.name);
         // let a = Activity::streaming("VGM", "https://twitch.tv/fmfunk");
         // let _ = ctx.set_activity(a).await;
         
-        let _ = Command::set_global_application_commands(&ctx.http, |commands| {
+        let _ = serenity::Command::set_global_application_commands(&ctx.http, |commands| {
             commands
                 // Multiworld command is disabled for now - was only used for testing stuff
                 //.create_application_command(interactions::multiworld::create_multiworld_command)
         }).await;
     }
 
-    async fn resume(&self, _: Context, _: ResumedEvent) {
+    async fn resume(&self, _: serenity::Context, _: serenity::ResumedEvent) {
         info!("Resumed");
     }
 
-    async fn reaction_add(&self, _ctx: Context, _reaction: Reaction) {
+    async fn reaction_add(&self, _ctx: serenity::Context, _reaction: serenity::Reaction) {
     }
 
-    async fn reaction_remove(&self, _ctx: Context, _reaction: Reaction) {
+    async fn reaction_remove(&self, _ctx: serenity::Context, _reaction: serenity::Reaction) {
     }
 }
 
 
 
-#[help]
+#[poise::command]
 #[individual_command_tip = "To get help with an individual command, pass its name as an argument to this command."]
 #[strikethrough_commands_tip_in_guild = " "]
 #[strikethrough_commands_tip_in_dm = " "]
@@ -67,21 +64,21 @@ impl EventHandler for Handler {
 #[lacking_role = "Hide"]
 #[wrong_channel = "Strike"]
 async fn my_help(
-    context: &Context,
-    msg: &Message,
-    args: Args,
-    help_options: &'static HelpOptions,
-    groups: &[&'static CommandGroup],
-    owners: HashSet<UserId>,
-) -> CommandResult {
-    let _ = help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
+    context: &serenity::Context,
+    msg: &serenity::Message,
+    args: poise::Args,
+    help_options: &'static poise::HelpOptions,
+    groups: &[&'static poise::CommandGroup],
+    owners: HashSet<serenity::UserId>,
+) -> poise::CommandResult {
+    let _ = poise::help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
     Ok(())
 }
 
 
-#[hook]
-async fn dispatch_error(ctx: &Context, msg: &Message, error: DispatchError, _command_name: &str) {
-    if let DispatchError::Ratelimited(info) = error {
+#[poise::hook]
+async fn dispatch_error(ctx: &serenity::Context, msg: &serenity::Message, error: poise::DispatchError, _command_name: &str) {
+    if let poise::DispatchError::Ratelimited(info) = error {
         // We notify them only once.
         if info.is_first_try {
             let _ = msg
@@ -93,8 +90,8 @@ async fn dispatch_error(ctx: &Context, msg: &Message, error: DispatchError, _com
 }
 
 
-#[hook]
-async fn normal_message_hook(ctx: &Context, msg: &Message) {    
+#[poise::hook]
+async fn normal_message_hook(ctx: &serenity::Context, msg: &serenity::Message) {    
     // Call the COBE message handler
     if let Err(e) = util::cobe::message_hook(ctx, msg).await {
         debug!("Cobe message handler error: {:?}", e);
@@ -111,7 +108,7 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber).expect("Failed to start the logger");
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
 
-    let http = Http::new(&token);
+    let http = serenity::Http::new(&token);
 
     let (owners, bot_id) = match http.get_current_application_info().await {
         Ok(info) => {
@@ -129,7 +126,7 @@ async fn main() {
         Err(why) => panic!("Could not access application info: {:?}", why),
     };
 
-    let framework = StandardFramework::new()
+    let framework = Framework::new()
         .configure(|c| c
             .with_whitespace(true)
             .on_mention(Some(bot_id))
@@ -147,8 +144,8 @@ async fn main() {
         .parse()
         .expect("application id is not a valid id");
 
-    let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
-    let mut client = Client::builder(&token, intents)
+    let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
+    let mut client = serenity::Client::builder(&token, intents)
         .framework(framework)
         .event_handler(Handler)
         .application_id(application_id)
