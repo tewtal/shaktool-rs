@@ -1,18 +1,25 @@
-use poise::serenity_prelude as serenity;
 use poise::command;
+use poise::CreateReply;
+use ::serenity::all::CreateEmbed;
 use crate::api::crocomire::Strategy;
 use crate::commands::time::*;
+use crate::{Context, Data, Error};
 
+pub fn general_commands() -> Vec<poise::Command<Data, Error>> {
+    vec![version(), strat(), wiki(), card(), time()]
+}
+
+const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 #[command(slash_command)]
-pub async fn version(ctx: poise::Context<'_>) -> Result<(), serenity::Error> {
+pub async fn version(ctx: Context<'_>) -> Result<(), Error> {
     let response = format!("**Shaktool** {} *by total*", VERSION.unwrap_or("<unknown version>"));
     ctx.say(response).await?;
     Ok(())
 }
 
+/// Searches for strategies on the Crocomire website
 #[command(slash_command)]
-#[description = "Searches the crocomi.re database for a Super Metroid strategy"]
-pub async fn strat(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+pub async fn strat(ctx: Context<'_>, args: String) -> Result<(), Error> {
     let strategies = Strategy::find(&args).await?;
     if !strategies.is_empty() {
         let mut output = String::new();
@@ -37,8 +44,7 @@ pub async fn strat(ctx: poise::Context<'_>, args: String) -> Result<(), serenity
 }
 
 #[command(slash_command)]
-#[description = "Searches the Super Metroid Wiki for pages matching the search string"]
-pub async fn wiki(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+pub async fn wiki(ctx: Context<'_>, args: String) -> Result<(), Error> {
     let titles = crate::api::wiki::search_wiki_titles(&args).await?;
     if !titles.is_empty() {
         let mut output = String::new();
@@ -62,23 +68,20 @@ pub async fn wiki(ctx: poise::Context<'_>, args: String) -> Result<(), serenity:
 }
 
 #[command(slash_command)]
-#[description = "Searches for an MTG card"]
-pub async fn card(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+pub async fn card(ctx: Context<'_>, args: String) -> Result<(), Error> {
     let result = crate::api::mtg::get_card(&args).await?;
     if let Some(card) = result.cards.first() {
-        ctx.send(|m| {
-            m.embed(|e| {
-                e.title(&card.name);
-                e.field("Mana cost", &card.mana_cost.as_ref().unwrap_or(&"None".into()).replace(&['{', '}'], ""), true);
-                e.field("Type", &card.card_type, true);
-                e.field("Card text", &card.text, false);
-                if let Some(image_url) = &card.image_url {
-                    e.image(image_url.replace("http", "https"));
-                }
-                e
-            });
-            m
-        }).await?;
+        let mut e = CreateEmbed::new()
+            .title(&card.name)
+            .field("Mana cost", &card.mana_cost.as_ref().unwrap_or(&"None".into()).replace(&['{', '}'], ""), true)
+            .field("Type", &card.card_type, true)
+            .field("Card text", &card.text, false);
+
+        if let Some(image_url) = &card.image_url {
+            e = e.image(image_url.replace("http", "https"));
+        }
+
+        ctx.send(CreateReply::default().embed(e)).await?;
     } else {
         ctx.say("Didn't find any cards matching that search.").await?;
     }

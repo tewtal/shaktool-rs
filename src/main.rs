@@ -1,4 +1,5 @@
-use std::{collections::{HashMap, HashSet}, env, sync::Arc};
+use std::{collections::{HashMap, HashSet}, env, sync::{atomic::AtomicU32, Arc}};
+use ::serenity::{all::ApplicationId, prelude::TypeMapKey};
 use tokio::sync::{Mutex, RwLock};
 use poise::serenity_prelude as serenity;
 use poise::Framework;
@@ -16,89 +17,58 @@ use commands::smz3::*;
 
 use crate::util::cobe::Cobe;
 
-pub struct ShardManagerContainer;
+// Types used by all command functions
+type Error = Box<dyn std::error::Error + Send + Sync>;
+#[allow(unused)]
+type Context<'a> = poise::Context<'a, Data, Error>;
 
-impl TypeMapKey for ShardManagerContainer {
-    type Value = Arc<Mutex<serenity::ShardManager>>;
+// Custom user data passed to all command functions
+pub struct Data {
+    poise_mentions: AtomicU32,
 }
 
-struct Handler;
-
-#[poise::async_trait]
-impl poise::EventHandler for Handler {
-    async fn interaction_create(&self, ctx: serenity::Context, interaction: serenity::Interaction) {
-        // Return if handler returns true to skip further processing since this interaction has been handled already
-        if interactions::multiworld::interaction_create_multiworld(&ctx, &interaction).await.unwrap_or(false) { return; }
+async fn event_handler(ctx: &serenity::Context, event: &serenity::FullEvent, _framework: poise::FrameworkContext<'_, Data, Error>, data: &Data) -> Result<(), Error> 
+{
+    match event {
+        serenity::FullEvent::InteractionCreate { interaction } => {
+            // Return if handler returns true to skip further processing since this interaction has been handled already
+            //interactions::multiworld::interaction_create_multiworld(ctx, interaction).await.unwrap_or(false)
+        },
+        serenity::FullEvent::Ready { data_about_bot, .. } => {
+            info!("Connected as {}", data_about_bot.user.name);
+        },
+        serenity::FullEvent::Message { new_message, .. } => {
+            if !new_message.author.bot {
+                if new_message.content.contains("<@") {
+                    if let Err(e) = util::cobe::message_hook(ctx, new_message).await {
+                        debug!("Cobe message handler error: {:?}", e);
+                    }
+                }
+            }
+        },
+        _ => {}
     }
-
-    async fn ready(&self, ctx: serenity::Context, ready: serenity::Ready) {
-        info!("Connected as {}", ready.user.name);
-        // let a = Activity::streaming("VGM", "https://twitch.tv/fmfunk");
-        // let _ = ctx.set_activity(a).await;
-        
-        let _ = serenity::Command::set_global_application_commands(&ctx.http, |commands| {
-            commands
-                // Multiworld command is disabled for now - was only used for testing stuff
-                //.create_application_command(interactions::multiworld::create_multiworld_command)
-        }).await;
-    }
-
-    async fn resume(&self, _: serenity::Context, _: serenity::ResumedEvent) {
-        info!("Resumed");
-    }
-
-    async fn reaction_add(&self, _ctx: serenity::Context, _reaction: serenity::Reaction) {
-    }
-
-    async fn reaction_remove(&self, _ctx: serenity::Context, _reaction: serenity::Reaction) {
-    }
-}
-
-
-
-#[poise::command]
-#[individual_command_tip = "To get help with an individual command, pass its name as an argument to this command."]
-#[strikethrough_commands_tip_in_guild = " "]
-#[strikethrough_commands_tip_in_dm = " "]
-#[lacking_permissions = "Hide"]
-#[lacking_role = "Hide"]
-#[wrong_channel = "Strike"]
-async fn my_help(
-    context: &serenity::Context,
-    msg: &serenity::Message,
-    args: poise::Args,
-    help_options: &'static poise::HelpOptions,
-    groups: &[&'static poise::CommandGroup],
-    owners: HashSet<serenity::UserId>,
-) -> poise::CommandResult {
-    let _ = poise::help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
     Ok(())
 }
 
 
-#[poise::hook]
-async fn dispatch_error(ctx: &serenity::Context, msg: &serenity::Message, error: poise::DispatchError, _command_name: &str) {
-    if let poise::DispatchError::Ratelimited(info) = error {
-        // We notify them only once.
-        if info.is_first_try {
-            let _ = msg
-                .channel_id
-                .say(&ctx, &format!("Try this again in {} seconds.", info.as_secs()))
-                .await;
-        }
-    }
+#[poise::command(prefix_command, track_edits, slash_command)]
+pub async fn help(
+    ctx: Context<'_>,
+    #[description = "Specific command to show help about"]
+    #[autocomplete = "poise::builtins::autocomplete_command"]
+    command: Option<String>,
+) -> Result<(), Error> {
+    poise::builtins::help(
+        ctx,
+        command.as_deref(),
+        poise::builtins::HelpConfiguration {
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok(())
 }
-
-
-#[poise::hook]
-async fn normal_message_hook(ctx: &serenity::Context, msg: &serenity::Message) {    
-    // Call the COBE message handler
-    if let Err(e) = util::cobe::message_hook(ctx, msg).await {
-        debug!("Cobe message handler error: {:?}", e);
-    }
-    
-}
-
 
 #[tokio::main]
 async fn main() {
@@ -116,7 +86,7 @@ async fn main() {
             if let Some(team) = info.team {
                 owners.insert(team.owner_user_id);
             } else {
-                owners.insert(info.owner.id);
+                owners.insert(info.owner.unwrap().id);
             }
             match http.get_current_user().await {
                 Ok(bot_id) => (owners, bot_id.id),
@@ -126,35 +96,42 @@ async fn main() {
         Err(why) => panic!("Could not access application info: {:?}", why),
     };
 
-    let framework = Framework::new()
-        .configure(|c| c
-            .with_whitespace(true)
-            .on_mention(Some(bot_id))
-            .prefix(env::var("COMMAND_PREFIX").unwrap_or_else(|_| "%".to_string()))
-            .owners(owners))
-        .on_dispatch_error(dispatch_error)
-        .normal_message(normal_message_hook)
-        .help(&MY_HELP)
-        .group(&GENERAL_GROUP)
-        .group(&LEADERBOARD_GROUP)
-        .group(&RANDOMIZER_GROUP);
+    let options = poise::FrameworkOptions {
+        commands: {
+            let mut commands = vec![help()];
+            commands.extend(commands::general::general_commands());
+            commands
+        },
+        prefix_options: poise::PrefixFrameworkOptions {
+            prefix: Some(env::var("COMMAND_PREFIX").unwrap_or_else(|_| "%".to_string())),
+            case_insensitive_commands: true,
+            ..Default::default()
+        },
+        event_handler: |ctx, event, framework, data| {
+            Box::pin(event_handler(ctx, event, framework, data))
+        },
+        ..Default::default()
+    };
 
-    let application_id: u64 = env::var("APPLICATION_ID")
+    let framework = poise::Framework::builder()
+        .options(options)
+        .build();
+
+    let application_id: ApplicationId = env::var("APPLICATION_ID")
         .expect("Expected an application id in the environment")
         .parse()
         .expect("application id is not a valid id");
 
     let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
+    
     let mut client = serenity::Client::builder(&token, intents)
         .framework(framework)
-        .event_handler(Handler)
         .application_id(application_id)
         .await
         .expect("Error creating client");
     
     {
         let mut data = client.data.write().await;
-        data.insert::<ShardManagerContainer>(client.shard_manager.clone());
         data.insert::<interactions::multiworld::MultiworldSessionKey>(Arc::new(RwLock::new(HashMap::new())));
         data.insert::<interactions::multiworld::MultiworldSettingsSessionKey>(Arc::new(RwLock::new(HashMap::new())));
         data.insert::<Cobe>(Arc::new(Mutex::new(Cobe::new())));
@@ -164,7 +141,6 @@ async fn main() {
 
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
-        shard_manager.lock().await.shutdown_all().await;
     });
 
     if let Err(why) = client.start().await {
