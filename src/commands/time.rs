@@ -4,6 +4,7 @@ use phf::phf_map;
 use std::collections::HashMap;
 use poise::serenity_prelude as serenity;
 use poise::command;
+use crate::{Context, Error, Data};
 
 const TZMAP: phf::Map<&'static str, chrono_tz::Tz> = phf_map! {
     "EST" => chrono_tz::US::Eastern,
@@ -39,7 +40,7 @@ const TZMAP: phf::Map<&'static str, chrono_tz::Tz> = phf_map! {
 };
 
 #[command(slash_command)]
-pub async fn time(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+pub async fn time(ctx: Context<'_>, args: String) -> Result<(), Error> {
     let parser = dtparse::Parser::default();
     let mut from_datetime = Utc::now();
 

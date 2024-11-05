@@ -1,11 +1,17 @@
 use std::str::FromStr;
 use poise::serenity_prelude as serenity;
 use poise::command;
+use poise::CreateReply;
 use crate::api::smz3::{RandomizerRequest, GameMode, GanonVulnerable, Goal, KeyShuffle, MorphLocation, OpenTourian, OpenTower, SMLogic, SwordLocation};
+use crate::{Context, Data, Error};
+
+pub fn smz3_commands() -> Vec<poise::Command<Data, Error>> {
+    vec![smz3()]
+}
 
 /// Generates a SMZ3 seed
 #[command(slash_command)]
-pub async fn smz3(ctx: poise::Context<'_>, args: String) -> Result<(), serenity::Error> {
+pub async fn smz3(ctx: Context<'_>, args: String) -> Result<(), Error> {
     let mut request = RandomizerRequest::default();
     match parse_args(&args, &mut request) {
         Ok(_) => Ok(create_game(ctx, &request).await?),
@@ -16,7 +22,7 @@ pub async fn smz3(ctx: poise::Context<'_>, args: String) -> Result<(), serenity:
     }
 }
 
-fn parse_args(args: &str, request: &mut RandomizerRequest) -> Result<(), Box<dyn std::error::Error>> {
+fn parse_args(args: &str, request: &mut RandomizerRequest) -> Result<(), Error> {
     for arg in args.split_whitespace() {
         let split = arg.split_once(':');
         if let Some(split) = split {
@@ -61,24 +67,22 @@ fn parse_args(args: &str, request: &mut RandomizerRequest) -> Result<(), Box<dyn
     Ok(())
 }
 
-async fn create_game(ctx: poise::Context<'_>, request: &RandomizerRequest) -> Result<(), serenity::Error> {
-    let mut e = serenity::CreateEmbed::default();
-    e.title("SMZ3 Randomizer");
-    e.description("Generating seed, please wait");
+async fn create_game(ctx: Context<'_>, request: &RandomizerRequest) -> Result<(), Error> {
+    let mut e = serenity::CreateEmbed::default()
+        .title("SMZ3 Randomizer")
+        .description("Generating seed, please wait");
 
-    let mut sent_msg = ctx.send(|m| {
-        m.set_embed(e.clone())
-    }).await?;
+    let sent_msg = ctx.send(CreateReply::default().embed(e.clone())).await?;
 
     let response = request.send().await;
     if let Err(error) = response {
-        e.description(format!("Error generating game: {:?}", error));
-        sent_msg.edit(ctx, |m| m.set_embed(e)).await?;
+        e = e.description(format!("Error generating game: {:?}", error));
+        sent_msg.edit(ctx, CreateReply::default().embed(e)).await?;
         return Ok(());
     } else {
-        e.description("Game generated successfully!");
-        e.field("Permalink", response.unwrap().permalink(), false);
-        sent_msg.edit(ctx, |m| m.set_embed(e)).await?;
+        e = e.description("Game generated successfully!")
+            .field("Permalink", response.unwrap().permalink(), false);
+        sent_msg.edit(ctx, CreateReply::default().embed(e)).await?;
     }
 
     Ok(())

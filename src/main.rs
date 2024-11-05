@@ -11,10 +11,6 @@ mod commands;
 mod api;
 mod interactions;
 
-use commands::general::*;
-use commands::leaderboard::*;
-use commands::smz3::*;
-
 use crate::util::cobe::Cobe;
 
 // Types used by all command functions
@@ -132,8 +128,8 @@ async fn main() {
     
     {
         let mut data = client.data.write().await;
-        data.insert::<interactions::multiworld::MultiworldSessionKey>(Arc::new(RwLock::new(HashMap::new())));
-        data.insert::<interactions::multiworld::MultiworldSettingsSessionKey>(Arc::new(RwLock::new(HashMap::new())));
+        // data.insert::<interactions::multiworld::MultiworldSessionKey>(Arc::new(RwLock::new(HashMap::new())));
+        // data.insert::<interactions::multiworld::MultiworldSettingsSessionKey>(Arc::new(RwLock::new(HashMap::new())));
         data.insert::<Cobe>(Arc::new(Mutex::new(Cobe::new())));
     }
 

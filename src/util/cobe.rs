@@ -3,6 +3,7 @@ use serenity::framework::standard::CommandResult;
 use serenity::prelude::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use crate::{Error};
 
 pub struct Cobe {
     context: Context
@@ -44,11 +45,14 @@ impl TypeMapKey for Cobe {
 }
 
 /* Message hook for responding to messages and learn new things */
-pub async fn message_hook(ctx: &serenity::client::Context, msg: &serenity::model::channel::Message) -> CommandResult {
-    if !msg.is_own(ctx) {
+pub async fn message_hook(ctx: &serenity::client::Context, msg: &serenity::model::channel::Message) -> Result<(), Error> {
+    if msg.author.id != ctx.cache.current_user().id {
         if msg.mentions_me(&ctx).await? {    
-            let current_user = &ctx.cache.current_user();
-            let arg = &msg.content_safe(ctx).replace(&format!("@{}#{}", current_user.name, current_user.discriminator), "");
+            
+            let arg = {
+                let current_user = ctx.cache.current_user();
+                &msg.content_safe(ctx).replace(&format!("@{}#{}", current_user.name, current_user.discriminator.unwrap()), "")
+            };
 
             let cobe_lock = {
                 let data = ctx.data.read().await;

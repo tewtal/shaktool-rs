@@ -2,7 +2,11 @@ use poise::command;
 use poise::CreateReply;
 use ::serenity::all::CreateEmbed;
 use crate::api::wiki;
-use crate::{Context, Error};
+use crate::{Context, Data, Error};
+
+pub fn leaderboard_commands () -> Vec<poise::Command<Data, Error>> {
+    vec![top(), records()]
+}
 
 /// Lists the top 10 players for a given category
 #[command(slash_command)]
