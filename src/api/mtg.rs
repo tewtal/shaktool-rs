@@ -4,6 +4,7 @@ use serde::Deserialize;
 type CardError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct Card
 {
     pub name: String,

@@ -1,10 +1,7 @@
-use std::{collections::{HashMap, HashSet}, env, sync::Arc};
-use tokio::sync::{Mutex, RwLock};
-use serenity::{model::application::command::Command, model::application::interaction::Interaction, async_trait, client::bridge::gateway::ShardManager, framework::{standard::macros::{help, hook}, standard::{CommandGroup, CommandResult, DispatchError, Args, HelpOptions, help_commands}, StandardFramework}, http::Http, model::{
-        event::ResumedEvent, 
-        gateway::Ready,
-    }, model::prelude::*, prelude::*};
-
+use std::{collections::HashSet, env, sync::Arc};
+use ::serenity::all::ApplicationId;
+use tokio::sync::Mutex;
+use poise::serenity_prelude as serenity;
 use tracing::{error, info, debug};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
@@ -13,95 +10,58 @@ mod commands;
 mod api;
 mod interactions;
 
-use commands::general::*;
-use commands::leaderboard::*;
-use commands::smz3::*;
-
 use crate::util::cobe::Cobe;
 
-pub struct ShardManagerContainer;
+// Types used by all command functions
+type Error = Box<dyn std::error::Error + Send + Sync>;
+#[allow(unused)]
+type Context<'a> = poise::Context<'a, Data, Error>;
 
-impl TypeMapKey for ShardManagerContainer {
-    type Value = Arc<Mutex<ShardManager>>;
+// Custom user data passed to all command functions
+pub struct Data {
+    pub cobe: Arc<Mutex<Cobe>>,
 }
 
-struct Handler;
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        // Return if handler returns true to skip further processing since this interaction has been handled already
-        if interactions::multiworld::interaction_create_multiworld(&ctx, &interaction).await.unwrap_or(false) { return; }
+async fn event_handler(ctx: &serenity::Context, event: &serenity::FullEvent, _framework: poise::FrameworkContext<'_, Data, Error>, data: &Data) -> Result<(), Error> 
+{
+    match event {
+        serenity::FullEvent::InteractionCreate { interaction: _ } => {
+            // Return if handler returns true to skip further processing since this interaction has been handled already
+            //interactions::multiworld::interaction_create_multiworld(ctx, interaction).await.unwrap_or(false)
+        },
+        serenity::FullEvent::Ready { data_about_bot, .. } => {
+            info!("Connected as {}", data_about_bot.user.name);
+        },
+        serenity::FullEvent::Message { new_message, .. } => {
+            if !new_message.author.bot && new_message.mentions_me(ctx).await? {
+                if let Err(e) = util::cobe::message_hook(ctx, new_message, data).await {
+                    debug!("Cobe message handler error: {:?}", e);
+                }
+            }
+        },
+        _ => {}
     }
-
-    async fn ready(&self, ctx: Context, ready: Ready) {
-        info!("Connected as {}", ready.user.name);
-        // let a = Activity::streaming("VGM", "https://twitch.tv/fmfunk");
-        // let _ = ctx.set_activity(a).await;
-        
-        let _ = Command::set_global_application_commands(&ctx.http, |commands| {
-            commands
-                // Multiworld command is disabled for now - was only used for testing stuff
-                //.create_application_command(interactions::multiworld::create_multiworld_command)
-        }).await;
-    }
-
-    async fn resume(&self, _: Context, _: ResumedEvent) {
-        info!("Resumed");
-    }
-
-    async fn reaction_add(&self, _ctx: Context, _reaction: Reaction) {
-    }
-
-    async fn reaction_remove(&self, _ctx: Context, _reaction: Reaction) {
-    }
-}
-
-
-
-#[help]
-#[individual_command_tip = "To get help with an individual command, pass its name as an argument to this command."]
-#[strikethrough_commands_tip_in_guild = " "]
-#[strikethrough_commands_tip_in_dm = " "]
-#[lacking_permissions = "Hide"]
-#[lacking_role = "Hide"]
-#[wrong_channel = "Strike"]
-async fn my_help(
-    context: &Context,
-    msg: &Message,
-    args: Args,
-    help_options: &'static HelpOptions,
-    groups: &[&'static CommandGroup],
-    owners: HashSet<UserId>,
-) -> CommandResult {
-    let _ = help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
     Ok(())
 }
 
 
-#[hook]
-async fn dispatch_error(ctx: &Context, msg: &Message, error: DispatchError, _command_name: &str) {
-    if let DispatchError::Ratelimited(info) = error {
-        // We notify them only once.
-        if info.is_first_try {
-            let _ = msg
-                .channel_id
-                .say(&ctx, &format!("Try this again in {} seconds.", info.as_secs()))
-                .await;
-        }
-    }
+#[poise::command(prefix_command, track_edits, slash_command)]
+pub async fn help(
+    ctx: Context<'_>,
+    #[description = "Specific command to show help about"]
+    #[autocomplete = "poise::builtins::autocomplete_command"]
+    command: Option<String>,
+) -> Result<(), Error> {
+    poise::builtins::help(
+        ctx,
+        command.as_deref(),
+        poise::builtins::HelpConfiguration {
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok(())
 }
-
-
-#[hook]
-async fn normal_message_hook(ctx: &Context, msg: &Message) {    
-    // Call the COBE message handler
-    if let Err(e) = util::cobe::message_hook(ctx, msg).await {
-        debug!("Cobe message handler error: {:?}", e);
-    }
-    
-}
-
 
 #[tokio::main]
 async fn main() {
@@ -111,15 +71,15 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber).expect("Failed to start the logger");
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
 
-    let http = Http::new(&token);
+    let http = serenity::Http::new(&token);
 
-    let (owners, bot_id) = match http.get_current_application_info().await {
+    let (_owners, _bot_id) = match http.get_current_application_info().await {
         Ok(info) => {
             let mut owners = HashSet::new();
             if let Some(team) = info.team {
                 owners.insert(team.owner_user_id);
             } else {
-                owners.insert(info.owner.id);
+                owners.insert(info.owner.unwrap().id);
             }
             match http.get_current_user().await {
                 Ok(bot_id) => (owners, bot_id.id),
@@ -129,45 +89,53 @@ async fn main() {
         Err(why) => panic!("Could not access application info: {:?}", why),
     };
 
-    let framework = StandardFramework::new()
-        .configure(|c| c
-            .with_whitespace(true)
-            .on_mention(Some(bot_id))
-            .prefix(env::var("COMMAND_PREFIX").unwrap_or_else(|_| "%".to_string()))
-            .owners(owners))
-        .on_dispatch_error(dispatch_error)
-        .normal_message(normal_message_hook)
-        .help(&MY_HELP)
-        .group(&GENERAL_GROUP)
-        .group(&LEADERBOARD_GROUP)
-        .group(&RANDOMIZER_GROUP);
+    let options = poise::FrameworkOptions {
+        commands: {
+            let mut commands = vec![help()];
+            commands.extend(commands::general::general_commands());
+            commands.extend(commands::smz3::smz3_commands());
+            commands.extend(commands::leaderboard::leaderboard_commands());
+            commands.extend(vec![commands::time::time()]);
+            commands
+        },
+        prefix_options: poise::PrefixFrameworkOptions {
+            prefix: Some(env::var("COMMAND_PREFIX").unwrap_or_else(|_| "%".to_string())),
+            case_insensitive_commands: true,
+            ..Default::default()
+        },
+        event_handler: |ctx, event, framework, data| {
+            Box::pin(event_handler(ctx, event, framework, data))
+        },        
+        ..Default::default()
+    };
 
-    let application_id: u64 = env::var("APPLICATION_ID")
+    let framework = poise::Framework::builder()
+        .options(options)
+        .setup(|_ctx, _ready, _framework| {
+            Box::pin(async move {
+                let data = Data {
+                    cobe: Arc::new(Mutex::new(Cobe::new())),
+                };
+                Ok(data)
+            })
+        })
+        .build();
+
+    let application_id: ApplicationId = env::var("APPLICATION_ID")
         .expect("Expected an application id in the environment")
         .parse()
         .expect("application id is not a valid id");
 
-    let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
-    let mut client = Client::builder(&token, intents)
+    let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
+    
+    let mut client = serenity::Client::builder(&token, intents)
         .framework(framework)
-        .event_handler(Handler)
         .application_id(application_id)
         .await
         .expect("Error creating client");
     
-    {
-        let mut data = client.data.write().await;
-        data.insert::<ShardManagerContainer>(client.shard_manager.clone());
-        data.insert::<interactions::multiworld::MultiworldSessionKey>(Arc::new(RwLock::new(HashMap::new())));
-        data.insert::<interactions::multiworld::MultiworldSettingsSessionKey>(Arc::new(RwLock::new(HashMap::new())));
-        data.insert::<Cobe>(Arc::new(Mutex::new(Cobe::new())));
-    }
-
-    let shard_manager = client.shard_manager.clone();
-
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
-        shard_manager.lock().await.shutdown_all().await;
     });
 
     if let Err(why) = client.start().await {

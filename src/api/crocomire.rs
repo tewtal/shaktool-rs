@@ -1,8 +1,9 @@
 use reqwest;
 use serde_json;
-use serde::{Deserialize};
+use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct Strategy {
     pub area_name: String,
     pub category_name: String,

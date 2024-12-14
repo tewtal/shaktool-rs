@@ -2,9 +2,8 @@ use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
 use phf::phf_map;
 use std::collections::HashMap;
-use serenity::prelude::*;
-use serenity::model::channel::Message;
-use serenity::framework::standard::{Args, CommandResult, macros::{command}};
+use poise::command;
+use crate::{Context, Error};
 
 const TZMAP: phf::Map<&'static str, chrono_tz::Tz> = phf_map! {
     "EST" => chrono_tz::US::Eastern,
@@ -39,17 +38,17 @@ const TZMAP: phf::Map<&'static str, chrono_tz::Tz> = phf_map! {
     "ESAST" => chrono_tz::America::Sao_Paulo
 };
 
-#[command]
-pub async fn time(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+#[command(slash_command)]
+pub async fn time(ctx: Context<'_>, args: String) -> Result<(), Error> {
     let parser = dtparse::Parser::default();
     let mut from_datetime = Utc::now();
 
     if !args.is_empty() {
         /* Parse date if possible */
-        let (naive_datetime, _, _) = match parser.parse(args.message(), None, None, true, false, None, true, &HashMap::new()) {
+        let (naive_datetime, _, _) = match parser.parse(&args, None, None, true, false, None, true, &HashMap::new()) {
             Ok(r) => r,
             Err(e) => {
-                msg.channel_id.say(&ctx, e).await?;
+                ctx.say(e.to_string()).await?;
                 return Ok(());
             }
         };
@@ -57,16 +56,16 @@ pub async fn time(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         let mut tz = chrono_tz::UTC;
 
         /* Parse timezone if possible */
-        let am_pm = args.message().to_lowercase().contains("am") || args.message().to_lowercase().contains("pm");
-        if (am_pm && args.len() > 2) || (!am_pm && args.len() > 1) {
-            let tz_string = args.raw().last().unwrap();
+        let am_pm = args.to_lowercase().contains("am") || args.to_lowercase().contains("pm");
+        if (am_pm && args.split_whitespace().count() > 2) || (!am_pm && args.split_whitespace().count() > 1) {
+            let tz_string = args.split_whitespace().last().unwrap();
             if TZMAP.contains_key(&tz_string.to_uppercase()) {
                 tz = TZMAP[&tz_string.to_uppercase()];
             } else {
                 tz = match tz_string.parse::<Tz>() {
                     Ok(t) => t,
                     Err(e) => {                    
-                        msg.channel_id.say(&ctx, e).await?;
+                        ctx.say(e.to_string()).await?;
                         return Ok(());
                     }
                 };
@@ -88,7 +87,7 @@ pub async fn time(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let aest_time = from_datetime.with_timezone(&chrono_tz::Australia::Sydney).format(fmt_12).to_string();
     let unix_time = from_datetime.timestamp();
 
-    msg.channel_id.say(&ctx, format!("{} -> {} :: {} :: {} :: {} :: **<t:{}:t>** Local", args.message(), utc_time, est_time, cet_time, aest_time, unix_time)).await?;
+    ctx.say(format!("{} -> {} :: {} :: {} :: {} :: **<t:{}:t>** Local", args, utc_time, est_time, cet_time, aest_time, unix_time)).await?;
     
     Ok(())
 }
