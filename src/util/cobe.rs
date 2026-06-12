@@ -1,8 +1,5 @@
 use inline_python::{Context, python};
-use serenity::framework::standard::CommandResult;
-use serenity::prelude::*;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use crate::Data;
 
 pub struct Cobe {
     context: Context
@@ -19,16 +16,13 @@ impl Cobe {
             print("Python :: Done initializing")
         };
 
-        Cobe {
-            context
-        }
+        Cobe { context }
     }
 
     pub fn reply(&self, msg: &str) -> String {
         self.context.run(python! {
             reply = b.reply('msg)
         });
-
         self.context.get::<String>("reply")
     }
 
@@ -39,41 +33,29 @@ impl Cobe {
     }
 }
 
-impl TypeMapKey for Cobe {
-    type Value = Arc<Mutex<Cobe>>;
-}
+pub async fn message_hook(
+    ctx: &poise::serenity_prelude::Context,
+    msg: &poise::serenity_prelude::Message,
+    data: &Data,
+) -> Result<(), crate::Error> {
+    if msg.author.id == ctx.cache.current_user().id {
+        return Ok(());
+    }
 
-/* Message hook for responding to messages and learn new things */
-pub async fn message_hook(ctx: &serenity::client::Context, msg: &serenity::model::channel::Message) -> CommandResult {
-    if !msg.is_own(ctx) {
-        if msg.mentions_me(&ctx).await? {    
-            let current_user = &ctx.cache.current_user();
-            let arg = &msg.content_safe(ctx).replace(&format!("@{}#{}", current_user.name, current_user.discriminator), "");
+    if msg.mentions_me(&ctx).await? {
+        let current_user = ctx.cache.current_user().clone();
+        let arg = msg.content.replace(&format!("@{}", current_user.name), "");
 
-            let cobe_lock = {
-                let data = ctx.data.read().await;
-                data.get::<Cobe>().ok_or("Could not retrieve Cobe instance")?.clone()
-            };
+        let reply = {
+            let cobe = data.cobe.lock().await;
+            cobe.learn(arg.trim());
+            cobe.reply(arg.trim())
+        };
 
-            let reply = {
-                let cobe = cobe_lock.lock().await;
-                cobe.learn(arg.trim());                
-                cobe.reply(arg.trim())
-            };
-
-            let _ = msg.channel_id.say(&ctx, reply).await;
-            
-        } else {
-            let cobe_lock = {
-                let data = ctx.data.read().await;
-                data.get::<Cobe>().ok_or("Could not retrieve Cobe instance")?.clone()
-            };
-        
-            {
-                let cobe = cobe_lock.lock().await;
-                cobe.learn(&msg.content);
-            }
-        }
+        let _ = msg.channel_id.say(&ctx, reply).await;
+    } else {
+        let cobe = data.cobe.lock().await;
+        cobe.learn(&msg.content);
     }
 
     Ok(())

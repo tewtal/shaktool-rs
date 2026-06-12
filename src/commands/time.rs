@@ -2,9 +2,7 @@ use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
 use phf::phf_map;
 use std::collections::HashMap;
-use serenity::prelude::*;
-use serenity::model::channel::Message;
-use serenity::framework::standard::{Args, CommandResult, macros::{command}};
+use crate::{Context, Error};
 
 const TZMAP: phf::Map<&'static str, chrono_tz::Tz> = phf_map! {
     "EST" => chrono_tz::US::Eastern,
@@ -39,56 +37,61 @@ const TZMAP: phf::Map<&'static str, chrono_tz::Tz> = phf_map! {
     "ESAST" => chrono_tz::America::Sao_Paulo
 };
 
-#[command]
-pub async fn time(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+/// Converts a date/time to multiple timezones
+#[poise::command(prefix_command, slash_command)]
+pub async fn time(
+    ctx: Context<'_>,
+    #[description = "Date/time string with optional timezone (e.g. '3pm EST')"]
+    #[rest]
+    input: Option<String>,
+) -> Result<(), Error> {
     let parser = dtparse::Parser::default();
     let mut from_datetime = Utc::now();
+    let input_str = input.as_deref().unwrap_or("");
 
-    if !args.is_empty() {
-        /* Parse date if possible */
-        let (naive_datetime, _, _) = match parser.parse(args.message(), None, None, true, false, None, true, &HashMap::new()) {
+    if !input_str.is_empty() {
+        let (naive_datetime, _, _) = match parser.parse(input_str, None, None, true, false, None, true, &HashMap::new()) {
             Ok(r) => r,
             Err(e) => {
-                msg.channel_id.say(&ctx, e).await?;
+                ctx.say(e.to_string()).await?;
                 return Ok(());
             }
         };
 
         let mut tz = chrono_tz::UTC;
 
-        /* Parse timezone if possible */
-        let am_pm = args.message().to_lowercase().contains("am") || args.message().to_lowercase().contains("pm");
-        if (am_pm && args.len() > 2) || (!am_pm && args.len() > 1) {
-            let tz_string = args.raw().last().unwrap();
+        let words: Vec<&str> = input_str.split_whitespace().collect();
+        let am_pm = input_str.to_lowercase().contains("am") || input_str.to_lowercase().contains("pm");
+        if (am_pm && words.len() > 2) || (!am_pm && words.len() > 1) {
+            let tz_string = words.last().unwrap();
             if TZMAP.contains_key(&tz_string.to_uppercase()) {
                 tz = TZMAP[&tz_string.to_uppercase()];
             } else {
                 tz = match tz_string.parse::<Tz>() {
                     Ok(t) => t,
-                    Err(e) => {                    
-                        msg.channel_id.say(&ctx, e).await?;
+                    Err(e) => {
+                        ctx.say(e.to_string()).await?;
                         return Ok(());
                     }
                 };
             }
         }
-        
-        /* Convert the input date back to UTC */
+
         let local_datetime = tz.from_local_datetime(&naive_datetime).unwrap();
-        let utc_datetime = local_datetime.with_timezone(&Utc);
-        from_datetime = utc_datetime;
+        from_datetime = local_datetime.with_timezone(&Utc);
     }
 
     let fmt_24 = "**%H:%M** %Z";
     let fmt_12 = "**%-I:%M** *%p* %Z";
 
-    let utc_time = from_datetime.with_timezone(&chrono_tz::UTC).format(fmt_24).to_string();
-    let est_time = from_datetime.with_timezone(&chrono_tz::US::Eastern).format(fmt_12).to_string();
-    let cet_time = from_datetime.with_timezone(&chrono_tz::CET).format(fmt_24).to_string();
+    let utc_time  = from_datetime.with_timezone(&chrono_tz::UTC).format(fmt_24).to_string();
+    let est_time  = from_datetime.with_timezone(&chrono_tz::US::Eastern).format(fmt_12).to_string();
+    let cet_time  = from_datetime.with_timezone(&chrono_tz::CET).format(fmt_24).to_string();
     let aest_time = from_datetime.with_timezone(&chrono_tz::Australia::Sydney).format(fmt_12).to_string();
     let unix_time = from_datetime.timestamp();
 
-    msg.channel_id.say(&ctx, format!("{} -> {} :: {} :: {} :: {} :: **<t:{}:t>** Local", args.message(), utc_time, est_time, cet_time, aest_time, unix_time)).await?;
-    
+    ctx.say(format!("{} -> {} :: {} :: {} :: {} :: **<t:{}:t>** Local",
+        input_str, utc_time, est_time, cet_time, aest_time, unix_time)).await?;
+
     Ok(())
 }
