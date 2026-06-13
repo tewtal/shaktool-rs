@@ -1,38 +1,41 @@
 use reqwest;
-use serde_json;
 use serde::Deserialize;
+use serde_json;
 
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
 pub struct DeerTierRecord {
-    #[serde(rename="ID")]
+    #[serde(rename = "ID")]
     pub id: i32,
-    #[serde(rename="Username")]
+    #[serde(rename = "Username")]
     pub username: String,
-    #[serde(rename="Category")]
+    #[serde(rename = "Category")]
     pub category: String,
-    #[serde(rename="RealTime")]
+    #[serde(rename = "RealTime")]
     pub real_time: Option<String>,
-    #[serde(rename="GameTime")]
+    #[serde(rename = "GameTime")]
     pub game_time: Option<String>,
-    #[serde(rename="EscapeGameTime")]
+    #[serde(rename = "EscapeGameTime")]
     pub escape_game_time: Option<String>,
-    #[serde(rename="VideoUrl")]
+    #[serde(rename = "VideoUrl")]
     pub video_url: Option<String>,
-    #[serde(rename="Comment")]
+    #[serde(rename = "Comment")]
     pub comment: Option<String>,
-    #[serde(rename="DateSubmitted")]
-    pub date_submitted: Option<String>
+    #[serde(rename = "DateSubmitted")]
+    pub date_submitted: Option<String>,
 }
 
 #[allow(dead_code)]
 impl DeerTierRecord {
-    pub async fn get_all_records() -> Result<Vec<DeerTierRecord>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_all_records(
+    ) -> Result<Vec<DeerTierRecord>, Box<dyn std::error::Error + Send + Sync>> {
         let reqclient = reqwest::Client::new();
-        let response = reqclient.get("https://deertier.com/api/records").send().await?;
+        let response = reqclient
+            .get("https://deertier.com/api/records")
+            .send()
+            .await?;
         let body = response.text().await?;
         let records: Vec<DeerTierRecord> = serde_json::from_str(&body)?;
         Ok(records)
-    }    
+    }
 }
-

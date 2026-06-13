@@ -1,9 +1,9 @@
+use crate::util::slugid;
 use reqwest;
+use serde::{Deserialize, Serialize};
 use serde_json;
-use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use strum_macros::EnumString;
-use crate::util::slugid;
 type ApiError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Deserialize, Debug)]
@@ -12,7 +12,7 @@ pub struct Randomizer {
     pub id: String,
     pub name: String,
     pub version: String,
-    pub options: Vec<RandomizerOption>,    
+    pub options: Vec<RandomizerOption>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -22,7 +22,7 @@ pub enum RandomizerOptionType {
     Dropdown,
     Seed,
     Checkbox,
-    Players,    
+    Players,
 }
 
 #[derive(Deserialize, Debug)]
@@ -33,7 +33,7 @@ pub struct RandomizerOption {
     #[serde(rename = "type")]
     pub option_type: RandomizerOptionType,
     pub values: Option<HashMap<String, String>>,
-    pub default: Option<String>
+    pub default: Option<String>,
 }
 
 #[derive(EnumString, Serialize, Deserialize, Debug)]
@@ -222,16 +222,24 @@ pub struct RandomizerResponse {
 
 impl RandomizerResponse {
     pub fn permalink(&self) -> String {
-	let seed_link = match self.mode.as_str() {
+        let seed_link = match self.mode.as_str() {
             "multiworld" => "multiworld".to_string(),
-            _ => "seed".to_string()
+            _ => "seed".to_string(),
         };
 
         if self.beta {
-            format!("https://beta.samus.link/{}/{}", seed_link, slugid::create(&self.guid).unwrap())
+            format!(
+                "https://beta.samus.link/{}/{}",
+                seed_link,
+                slugid::create(&self.guid).unwrap()
+            )
         } else {
-            format!("https://samus.link/{}/{}", seed_link, slugid::create(&self.guid).unwrap())
-        }        
+            format!(
+                "https://samus.link/{}/{}",
+                seed_link,
+                slugid::create(&self.guid).unwrap()
+            )
+        }
     }
 }
 
@@ -278,7 +286,7 @@ impl RandomizerRequest {
 
     pub async fn send(&self) -> Result<RandomizerResponse, ApiError> {
         let client = reqwest::Client::new();
-        
+
         let url = if self.beta {
             "https://beta.samus.link/api/randomizers/smz3/generate"
         } else {
@@ -287,8 +295,7 @@ impl RandomizerRequest {
 
         let mut json_object = serde_json::to_value(self)?.as_object().unwrap().clone();
 
-        if self.gamemode == GameMode::Multiworld
-        {
+        if self.gamemode == GameMode::Multiworld {
             if let Some(names) = &self.names {
                 for (i, name) in names.iter().enumerate() {
                     let name_str = format!("player-{}", i);
@@ -298,19 +305,13 @@ impl RandomizerRequest {
 
                 let player_count = format!("{}", names.len());
                 json_object["players"] = serde_json::from_str(&player_count)?;
-		
             }
         }
 
-
-        let res = client.post(url)
-            .json(&json_object)
-            .send()
-            .await?;
+        let res = client.post(url).json(&json_object).send().await?;
         let body = res.text().await?;
         let mut response: RandomizerResponse = serde_json::from_str(&body)?;
         response.beta = self.beta;
         Ok(response)
     }
-
 }

@@ -2,5 +2,9 @@
 .env
 .vscode
 bot.brain*
+*.db
+*.db-shm
+*.db-wal
+*.log
 __pycache__
 *.pyc

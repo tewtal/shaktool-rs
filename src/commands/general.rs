@@ -1,6 +1,23 @@
 use crate::{Context, Error};
 use crate::api::crocomire::Strategy;
 
+/// Shows this help message
+#[poise::command(prefix_command, slash_command)]
+pub async fn help(
+    ctx: Context<'_>,
+    #[description = "Specific command to show help about"]
+    #[autocomplete = "poise::builtins::autocomplete_command"]
+    command: Option<String>,
+) -> Result<(), Error> {
+    poise::builtins::help(
+        ctx,
+        command.as_deref(),
+        poise::builtins::HelpConfiguration::default(),
+    )
+    .await?;
+    Ok(())
+}
+
 /// Shows the current bot version
 #[poise::command(prefix_command, slash_command)]
 pub async fn version(ctx: Context<'_>) -> Result<(), Error> {

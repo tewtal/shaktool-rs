@@ -10,11 +10,14 @@ mod util;
 mod commands;
 mod api;
 mod interactions;
+mod db;
+mod tasks;
 
 use crate::util::cobe::Cobe;
 
 pub struct Data {
     pub cobe: Arc<Mutex<Cobe>>,
+    pub db: db::Db,
     pub multiworld_sessions: Arc<RwLock<HashMap<MessageId, interactions::multiworld::MultiworldSession>>>,
     pub multiworld_settings: Arc<RwLock<HashMap<MessageId, MessageId>>>,
 }
@@ -49,6 +52,7 @@ async fn event_handler(
         }
         serenity::FullEvent::InteractionCreate { interaction } => {
             interactions::multiworld::interaction_create_multiworld(ctx, interaction, data).await?;
+            interactions::speedrun::interaction_create_speedrun(ctx, interaction, data).await?;
         }
         serenity::FullEvent::Message { new_message } => {
             if let Err(e) = util::cobe::message_hook(ctx, new_message, data).await {
@@ -69,10 +73,14 @@ async fn main() {
 
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     let prefix = env::var("COMMAND_PREFIX").unwrap_or_else(|_| "%".to_string());
+    let db_path = env::var("DATABASE_PATH").unwrap_or_else(|_| "shaktool.db".to_string());
+
+    let db = db::Db::connect(&db_path).await.expect("Failed to open the database");
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![
+                commands::general::help(),
                 commands::general::version(),
                 commands::general::strat(),
                 commands::general::wiki(),
@@ -81,6 +89,8 @@ async fn main() {
                 commands::leaderboard::top(),
                 commands::leaderboard::records(),
                 commands::smz3::smz3(),
+                commands::config::config(),
+                commands::speedrun::speedrun(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some(prefix),
@@ -92,10 +102,13 @@ async fn main() {
             },
             ..Default::default()
         })
-        .setup(|_ctx, _ready, _framework| {
+        .setup(move |ctx, _ready, _framework| {
+            let ctx = ctx.clone();
             Box::pin(async move {
+                tasks::start(ctx, db.clone());
                 Ok(Data {
                     cobe: Arc::new(Mutex::new(Cobe::new())),
+                    db,
                     multiworld_sessions: Arc::new(RwLock::new(HashMap::new())),
                     multiworld_settings: Arc::new(RwLock::new(HashMap::new())),
                 })

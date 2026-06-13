@@ -37,3 +37,5 @@ poise = "0.6"
 futures = "0.3"
 strum = "0.26"
 strum_macros = "0.26"
+async-trait = "0.1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }

@@ -1,6 +1,9 @@
 pub mod crocomire;
 pub mod deertier;
-pub mod wiki;
+pub mod llm;
 pub mod mtg;
+pub mod oembed;
 pub mod smz3;
+pub mod speedrun;
+pub mod wiki;
 // pub mod openai;
