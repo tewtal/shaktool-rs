@@ -31,6 +31,8 @@ enum ValueKind {
     Bool,
     /// A comma-separated list of bare tokens (e.g. game abbreviations).
     CsvList,
+    /// A comma-separated list of Discord snowflake ids (e.g. role ids).
+    IdList,
     /// A comma-separated `game[/category]:value` override list, where each
     /// value is validated by the named inner kind.
     OverrideList(&'static str),
@@ -44,6 +46,7 @@ impl ValueKind {
             ValueKind::IntRange(..) => "integer",
             ValueKind::Bool => "boolean",
             ValueKind::CsvList => "list",
+            ValueKind::IdList => "id list",
             ValueKind::OverrideList(_) => "overrides",
         }
     }
@@ -60,6 +63,17 @@ impl ValueKind {
             ValueKind::Bool => validate_bool(value),
             ValueKind::CsvList => {
                 if non_empty_tokens(value).next().is_none() {
+                    return Err("list has no entries".to_string());
+                }
+                Ok(())
+            }
+            ValueKind::IdList => {
+                let mut seen = false;
+                for token in non_empty_tokens(value) {
+                    validate_id(token)?;
+                    seen = true;
+                }
+                if !seen {
                     return Err("list has no entries".to_string());
                 }
                 Ok(())
@@ -164,9 +178,9 @@ const KNOWN_SETTINGS: &[SettingDef] = &[
         scope: "speedrun",
         key: "mod_role",
         level: Level::Server,
-        kind: ValueKind::Id,
-        example: "123456789012345678",
-        description: "Role allowed to use the run review buttons in this server",
+        kind: ValueKind::IdList,
+        example: "123456789012345678,987654321098765432",
+        description: "Role(s) allowed to use the run review buttons in this server (comma-separated)",
     },
     SettingDef {
         scope: "speedrun",
@@ -403,6 +417,18 @@ mod tests {
         assert!(ValueKind::Id.validate("123456789012345678").is_ok());
         assert!(ValueKind::Id.validate("banana").is_err());
         assert!(ValueKind::Id.validate("").is_err());
+    }
+
+    #[test]
+    fn id_list_accepts_one_or_many_ids() {
+        let kind = ValueKind::IdList;
+        assert!(kind.validate("123456789012345678").is_ok());
+        assert!(kind.validate("123456789012345678,987654321098765432").is_ok());
+        // Whitespace around entries is tolerated.
+        assert!(kind.validate(" 123 , 456 ").is_ok());
+        assert!(kind.validate("123,banana").is_err());
+        assert!(kind.validate("").is_err());
+        assert!(kind.validate(",").is_err());
     }
 
     #[test]

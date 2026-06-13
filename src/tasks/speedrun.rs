@@ -242,7 +242,7 @@ struct RunPipelineResult {
 /// - `config set speedrun mod_channel <channel id>` — moderation log
 /// - `config set speedrun announce_channel <channel id>` — public announcements
 /// - `config set speedrun games <abbreviation>,...` — games this server watches
-/// - `config set speedrun mod_role <role id>` (optional; role allowed to review)
+/// - `config set speedrun mod_role <role id>[,<role id>...]` (optional; roles allowed to review)
 ///
 /// Global configuration (moderation policy, shared by all servers):
 /// - `config set speedrun modes <game[/category]>:<manual|auto>,...` (default manual)
@@ -717,6 +717,26 @@ pub enum ReviewResult {
     Failed,
 }
 
+/// Builds a human-searchable thread name from the mod log embed title, which
+/// is already "<game> submission: <category> in <time> by <players>". The
+/// " submission:" boilerplate is dropped so the name reads "Review: <game> —
+/// <category> in <time> by <players>". Falls back to the run id when no title
+/// is available, and is truncated to Discord's 100-character thread-name cap.
+fn review_thread_name(embed_title: Option<&str>, run_id: &str) -> String {
+    let name = match embed_title {
+        Some(title) => {
+            let cleaned = title.replacen(" submission:", " —", 1);
+            format!("Review: {}", cleaned)
+        }
+        None => format!("Review: run {}", run_id),
+    };
+    if name.chars().count() > 100 {
+        name.chars().take(99).collect::<String>() + "…"
+    } else {
+        name
+    }
+}
+
 /// Puts a tracked pending run into "pending review": opens a discussion
 /// thread off its first mod log message, posts Approve/Reject/Dismiss buttons
 /// there, and restamps the mod log embeds. The run stays in the speedrun.com
@@ -749,9 +769,12 @@ pub async fn enter_review(
     let channel = ChannelId::new(channel_id);
     let message_id = MessageId::new(message_id);
 
-    // Capture the current Status note and colour so a dismiss can restore the
-    // embed exactly as it was, rather than re-deriving it from policy.
-    let (prior_status, prior_colour) = match channel.message(&ctx.http, message_id).await {
+    // Capture the current Status note, colour, and title from the mod log
+    // embed. Status/colour let a dismiss restore the embed exactly; the title
+    // (already "<game> submission: <category> in <time> by <players>") gives
+    // the thread a human-searchable name without re-fetching the run — which
+    // also matters for demo/showcase runs that don't exist on speedrun.com.
+    let (prior_status, prior_colour, embed_title) = match channel.message(&ctx.http, message_id).await {
         Ok(message) => {
             let embed = message.embeds.first();
             let status = embed
@@ -759,11 +782,12 @@ pub async fn enter_review(
                 .map(|f| f.value.clone())
                 .unwrap_or_else(|| "⏳ Pending review".to_string());
             let colour = embed.and_then(|e| e.colour).map(|c| c.0).unwrap_or(COLOUR_PENDING);
-            (status, colour)
+            let title = embed.and_then(|e| e.title.clone());
+            (status, colour, title)
         }
         Err(e) => {
             warn!("Speedrun review: fetching mod log message {} failed: {:?}", message_id, e);
-            ("⏳ Pending review".to_string(), COLOUR_PENDING)
+            ("⏳ Pending review".to_string(), COLOUR_PENDING, None)
         }
     };
 
@@ -771,7 +795,7 @@ pub async fn enter_review(
         .create_thread_from_message(
             &ctx.http,
             message_id,
-            CreateThread::new(format!("Review: run {}", run_id))
+            CreateThread::new(review_thread_name(embed_title.as_deref(), run_id))
                 .auto_archive_duration(AutoArchiveDuration::OneWeek),
         )
         .await
@@ -1334,5 +1358,27 @@ mod tests {
         let modes = parse_modes("supermetroid:auto,broken,smz3:bogus");
         assert_eq!(modes.len(), 1);
         assert_eq!(modes.get("supermetroid"), Some(&Mode::Auto));
+    }
+
+    #[test]
+    fn thread_name_derives_from_embed_title() {
+        let title = "Super Metroid submission: Any% in 1:18:42 by Zoast";
+        assert_eq!(
+            review_thread_name(Some(title), "abc123"),
+            "Review: Super Metroid — Any% in 1:18:42 by Zoast"
+        );
+    }
+
+    #[test]
+    fn thread_name_falls_back_to_run_id() {
+        assert_eq!(review_thread_name(None, "abc123"), "Review: run abc123");
+    }
+
+    #[test]
+    fn thread_name_is_truncated_to_cap() {
+        let title = format!("Game submission: {}", "x".repeat(200));
+        let name = review_thread_name(Some(&title), "abc123");
+        assert!(name.chars().count() <= 100, "got {} chars", name.chars().count());
+        assert!(name.ends_with('…'));
     }
 }

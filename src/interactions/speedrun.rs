@@ -311,8 +311,9 @@ async fn edit_untracked(
     true
 }
 
-/// Review buttons may be used by administrators, or by members holding the
-/// role configured as this server's `speedrun.mod_role`.
+/// Review buttons may be used by administrators, or by members holding any of
+/// the roles configured in this server's `speedrun.mod_role` (a comma-separated
+/// list of role ids).
 async fn is_reviewer(data: &Data, member: Option<&Member>) -> Result<bool, Error> {
     let Some(member) = member else {
         return Ok(false);
@@ -320,10 +321,13 @@ async fn is_reviewer(data: &Data, member: Option<&Member>) -> Result<bool, Error
     if member.permissions.is_some_and(|p| p.administrator()) {
         return Ok(true);
     }
-    if let Some(role_id) = data.db.get_guild_setting(member.guild_id.get(), SCOPE, "mod_role").await? {
-        if let Ok(id) = role_id.parse::<u64>() {
-            return Ok(member.roles.contains(&RoleId::new(id)));
-        }
+    if let Some(setting) = data.db.get_guild_setting(member.guild_id.get(), SCOPE, "mod_role").await? {
+        let allowed = setting
+            .split(',')
+            .map(str::trim)
+            .filter_map(|id| id.parse::<u64>().ok())
+            .any(|id| member.roles.contains(&RoleId::new(id)));
+        return Ok(allowed);
     }
     Ok(false)
 }
