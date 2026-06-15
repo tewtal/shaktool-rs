@@ -753,7 +753,7 @@ pub async fn enter_review(
     let Some(raw) = db.get_task_state(TASK_NAME, &key).await? else {
         return Ok(ReviewResult::NotTracked);
     };
-    let Ok(mut pending) = serde_json::from_str::<PendingRun>(&raw) else {
+    let Ok(pending) = serde_json::from_str::<PendingRun>(&raw) else {
         return Ok(ReviewResult::NotTracked);
     };
 
@@ -821,18 +821,40 @@ pub async fn enter_review(
         }
     };
 
-    // Restamp every mod log embed as under review, keeping the buttons live so
-    // the run can still be decided from the original message.
-    let verdict = format!("🔍 Pending review by {}", opened_by);
-    restamp_mod_messages(ctx, &pending.messages, COLOUR_REVIEW, &verdict, demo, run_id).await;
-
-    pending.review = Some(ReviewState {
+    let review = ReviewState {
         thread_id: thread.id.get(),
         thread_message,
         opened_by: opened_by.to_string(),
         prior_status,
         prior_colour,
-    });
+    };
+
+    // The snapshot read at the top of this function is stale: creating the
+    // thread and posting its buttons took several network round-trips, during
+    // which the run may have been resolved (by the still-live buttons on the
+    // original mod log message, or by the poller), which claims and deletes
+    // this entry. Re-claim it atomically and only write the review state back
+    // if it's still there — a plain upsert would resurrect a resolved entry,
+    // leaving a tracked run that gets announced a second time when re-decided.
+    let Some(raw) = db.claim_task_state(TASK_NAME, &key).await? else {
+        archive_thread(
+            ctx,
+            &review,
+            "🚪 Review closed — the run was resolved before this thread opened.",
+        )
+        .await;
+        return Ok(ReviewResult::NotTracked);
+    };
+    let Ok(mut pending) = serde_json::from_str::<PendingRun>(&raw) else {
+        return Ok(ReviewResult::NotTracked);
+    };
+
+    // Restamp every mod log embed as under review, keeping the buttons live so
+    // the run can still be decided from the original message.
+    let verdict = format!("🔍 Pending review by {}", opened_by);
+    restamp_mod_messages(ctx, &pending.messages, COLOUR_REVIEW, &verdict, demo, run_id).await;
+
+    pending.review = Some(review);
     db.set_task_state(TASK_NAME, &key, &serde_json::to_string(&pending)?).await?;
 
     Ok(ReviewResult::Opened(thread.id.get()))
