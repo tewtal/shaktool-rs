@@ -34,6 +34,26 @@ settings are rejected with the same list.
 %config list [scope]
 ```
 
+The Quad randomizer command rolls on `https://quad.samus.link` by default. Extra selectable
+sites, such as beta deployments, can be enabled globally:
+
+```
+%config set quad sites beta=https://beta-quad.example.com,local=http://localhost:5173
+```
+
+Use `/quad-options` or `%quad_options` to show metadata-backed option keys and copyable
+examples for the freeform `%quad ... options` argument. Useful examples:
+
+```
+/quad-options section:sm
+/quad-options section:alttp search:crystal
+/quad-options section:alttp page:2
+```
+
+Seed generation posts a "Generating seed" embed immediately, shows included games and changed
+options, and edits that message when the randomizer API returns. When metadata is available,
+the bot sends default options too so the seed page has a fuller option summary.
+
 ### Speedrun.com queue moderation
 
 Watches the speedrun.com verification queue (every 2 minutes) for the configured games:

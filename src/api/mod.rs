@@ -3,6 +3,7 @@ pub mod deertier;
 pub mod llm;
 pub mod mtg;
 pub mod oembed;
+pub mod quad;
 pub mod smz3;
 pub mod speedrun;
 pub mod wiki;

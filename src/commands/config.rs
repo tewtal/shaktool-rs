@@ -33,6 +33,8 @@ enum ValueKind {
     CsvList,
     /// A comma-separated list of Discord snowflake ids (e.g. role ids).
     IdList,
+    /// A comma-separated list of named URLs (`name=https://example.com`).
+    NamedUrlList,
     /// A comma-separated `game[/category]:value` override list, where each
     /// value is validated by the named inner kind.
     OverrideList(&'static str),
@@ -47,6 +49,7 @@ impl ValueKind {
             ValueKind::Bool => "boolean",
             ValueKind::CsvList => "list",
             ValueKind::IdList => "id list",
+            ValueKind::NamedUrlList => "named URL list",
             ValueKind::OverrideList(_) => "overrides",
         }
     }
@@ -78,6 +81,7 @@ impl ValueKind {
                 }
                 Ok(())
             }
+            ValueKind::NamedUrlList => validate_named_url_list(value),
             ValueKind::OverrideList(inner) => validate_override_list(value, inner),
         }
     }
@@ -103,6 +107,50 @@ fn validate_bool(value: &str) -> Result<(), String> {
         "true" | "1" | "yes" | "on" | "false" | "0" | "no" | "off" => Ok(()),
         _ => Err(format!("`{}` is not a boolean (use true or false)", value)),
     }
+}
+
+fn validate_named_url_list(value: &str) -> Result<(), String> {
+    let mut seen = false;
+    for entry in non_empty_tokens(value) {
+        seen = true;
+        let Some((name, url)) = entry.split_once('=') else {
+            return Err(format!("`{}` is missing `=url` (expected name=https://example.com)", entry));
+        };
+        validate_site_name(name)?;
+        validate_url(url)?;
+    }
+    if !seen {
+        return Err("site list has no entries".to_string());
+    }
+    Ok(())
+}
+
+fn validate_site_name(name: &str) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("site name is empty".to_string());
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+    {
+        return Err(format!(
+            "`{}` is not a valid site name (use letters, numbers, hyphen, or underscore)",
+            name
+        ));
+    }
+    Ok(())
+}
+
+fn validate_url(url: &str) -> Result<(), String> {
+    let url = url.trim();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(format!("`{}` is not an http(s) URL", url));
+    }
+    if url.contains(',') || url.split("://").nth(1).unwrap_or_default().is_empty() {
+        return Err(format!("`{}` is not a valid URL for this setting", url));
+    }
+    Ok(())
 }
 
 /// Validates a `game[/category]:value` override list. The named inner kind
@@ -213,6 +261,14 @@ const KNOWN_SETTINGS: &[SettingDef] = &[
         kind: ValueKind::Bool,
         example: "true",
         description: "When true, report what auto-moderation would do without doing it",
+    },
+    SettingDef {
+        scope: "quad",
+        key: "sites",
+        level: Level::Global,
+        kind: ValueKind::NamedUrlList,
+        example: "beta=https://beta-quad.example.com",
+        description: "Extra Quad randomizer sites selectable by the quad command (live is always built in)",
     },
 ];
 
@@ -428,6 +484,17 @@ mod tests {
         assert!(kind.validate(" 123 , 456 ").is_ok());
         assert!(kind.validate("123,banana").is_err());
         assert!(kind.validate("").is_err());
+        assert!(kind.validate(",").is_err());
+    }
+
+    #[test]
+    fn named_url_list_accepts_named_sites() {
+        let kind = ValueKind::NamedUrlList;
+        assert!(kind.validate("beta=https://beta.example.com").is_ok());
+        assert!(kind.validate("beta=https://beta.example.com,local=http://localhost:5173").is_ok());
+        assert!(kind.validate("bad=https://").is_err());
+        assert!(kind.validate("bad name=https://example.com").is_err());
+        assert!(kind.validate("https://example.com").is_err());
         assert!(kind.validate(",").is_err());
     }
 

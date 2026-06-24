@@ -29,7 +29,6 @@ pub struct MultiworldSession {
     pub error: Option<String>,
 }
 
-#[allow(dead_code)]
 pub fn create_multiworld_command() -> CreateCommand {
     CreateCommand::new("multiworld")
         .description("Create multiworld session")

@@ -48,7 +48,6 @@ async fn event_handler(
     match event {
         serenity::FullEvent::Ready { data_about_bot } => {
             info!("Connected as {}", data_about_bot.user.name);
-            Command::set_global_commands(&ctx.http, vec![]).await?;
         }
         serenity::FullEvent::InteractionCreate { interaction } => {
             interactions::multiworld::interaction_create_multiworld(ctx, interaction, data).await?;
@@ -88,6 +87,8 @@ async fn main() {
                 commands::time::time(),
                 commands::leaderboard::top(),
                 commands::leaderboard::records(),
+                commands::quad::quad(),
+                commands::quad::quad_options(),
                 commands::smz3::smz3(),
                 commands::config::config(),
                 commands::speedrun::speedrun(),
@@ -102,9 +103,26 @@ async fn main() {
             },
             ..Default::default()
         })
-        .setup(move |ctx, _ready, _framework| {
+        .setup(move |ctx, _ready, framework| {
             let ctx = ctx.clone();
             Box::pin(async move {
+                let mut slash_commands =
+                    poise::builtins::create_application_commands(&framework.options().commands);
+                slash_commands.push(interactions::multiworld::create_multiworld_command());
+                match env::var("GUILD_ID").ok().and_then(|id| id.parse::<u64>().ok()) {
+                    // Guild commands register instantly, so use one for development.
+                    Some(guild_id) => {
+                        serenity::GuildId::new(guild_id)
+                            .set_commands(&ctx.http, slash_commands)
+                            .await?;
+                        info!("Registered slash commands to guild {}", guild_id);
+                    }
+                    // Global commands can take up to an hour to propagate.
+                    None => {
+                        serenity::Command::set_global_commands(&ctx.http, slash_commands).await?;
+                        info!("Registered global slash commands");
+                    }
+                }
                 tasks::start(ctx, db.clone());
                 Ok(Data {
                     cobe: Arc::new(Mutex::new(Cobe::new())),

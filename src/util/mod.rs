@@ -1,2 +1,2 @@
-pub mod slugid;
 pub mod cobe;
+pub mod slugid;
