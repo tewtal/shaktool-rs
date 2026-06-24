@@ -1,6 +1,20 @@
 use inline_python::{Context, python};
 use crate::Data;
 
+fn strip_bot_mentions(content: &str, bot_id: u64, bot_name: &str) -> String {
+    let mentions = [
+        format!("<@{}>", bot_id),
+        format!("<@!{}>", bot_id),
+        format!("@{}", bot_name),
+    ];
+
+    mentions
+        .iter()
+        .fold(content.to_string(), |content, mention| content.replace(mention, ""))
+        .trim()
+        .to_string()
+}
+
 pub struct Cobe {
     context: Context
 }
@@ -42,21 +56,43 @@ pub async fn message_hook(
         return Ok(());
     }
 
-    if msg.mentions_me(&ctx).await? {
-        let current_user = ctx.cache.current_user().clone();
-        let arg = msg.content.replace(&format!("@{}", current_user.name), "");
+    let current_user = ctx.cache.current_user().clone();
+    let bot_id = current_user.id.get();
+    let content = strip_bot_mentions(&msg.content, bot_id, &current_user.name);
 
+    if msg.mentions_me(&ctx).await? {
         let reply = {
             let cobe = data.cobe.lock().await;
-            cobe.learn(arg.trim());
-            cobe.reply(arg.trim())
+            cobe.learn(&content);
+            cobe.reply(&content)
         };
+        let reply = strip_bot_mentions(&reply, bot_id, &current_user.name);
 
-        let _ = msg.channel_id.say(&ctx, reply).await;
+        if !reply.is_empty() {
+            let _ = msg.channel_id.say(&ctx, reply).await;
+        }
     } else {
         let cobe = data.cobe.lock().await;
-        cobe.learn(&msg.content);
+        cobe.learn(&content);
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_bot_mentions;
+
+    #[test]
+    fn strips_discord_bot_mentions() {
+        assert_eq!(
+            strip_bot_mentions("<@123> hello <@!123>", 123, "Shaktool"),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn strips_legacy_name_mentions() {
+        assert_eq!(strip_bot_mentions("@Shaktool hello", 123, "Shaktool"), "hello");
+    }
 }
