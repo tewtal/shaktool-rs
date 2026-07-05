@@ -220,7 +220,7 @@ async fn handle_reject_submit(
     }
     let api_key = api_key();
     if !demo && api_key.is_none() {
-        return Ok(());
+        return modal_fail(ctx, modal, "SPEEDRUN_API_KEY is not configured.").await;
     }
     let reason = modal
         .data
@@ -240,7 +240,10 @@ async fn handle_reject_submit(
             return modal_followup(ctx, modal, &note).await;
         }
         let change = RunStatusChange::Rejected { reason: reason.clone() };
-        if let Err(e) = speedrun::set_run_status(&api_key.unwrap_or_default(), run_id, &change).await {
+        let api_key = api_key
+            .as_deref()
+            .expect("non-demo rejection checked for SPEEDRUN_API_KEY");
+        if let Err(e) = speedrun::set_run_status(api_key, run_id, &change).await {
             return modal_followup(ctx, modal, &format!("speedrun.com API call failed: {}", e)).await;
         }
     }
@@ -333,7 +336,10 @@ async fn is_reviewer(data: &Data, member: Option<&Member>) -> Result<bool, Error
 }
 
 fn api_key() -> Option<String> {
-    std::env::var("SPEEDRUN_API_KEY").ok()
+    std::env::var("SPEEDRUN_API_KEY")
+        .ok()
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
 }
 
 async fn deny(ctx: &Context, component: &ComponentInteraction) -> Result<(), Error> {
@@ -355,5 +361,11 @@ async fn followup(ctx: &Context, component: &ComponentInteraction, text: &str) -
 async fn modal_followup(ctx: &Context, modal: &ModalInteraction, text: &str) -> Result<(), Error> {
     let message = CreateInteractionResponseFollowup::new().content(text).ephemeral(true);
     modal.create_followup(&ctx.http, message).await?;
+    Ok(())
+}
+
+async fn modal_fail(ctx: &Context, modal: &ModalInteraction, text: &str) -> Result<(), Error> {
+    let response = CreateInteractionResponseMessage::new().content(text).ephemeral(true);
+    modal.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await?;
     Ok(())
 }

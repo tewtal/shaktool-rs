@@ -1,10 +1,16 @@
+use std::io;
+use std::time::Duration;
+
 use reqwest::header::USER_AGENT;
 use serde::Deserialize;
+use tokio::time::sleep;
 
 use crate::Error;
 
 const API_BASE: &str = "https://www.speedrun.com/api/v1";
 const AGENT: &str = "shaktool-rs/2.0";
+const STATUS_CONFIRM_ATTEMPTS: usize = 3;
+const STATUS_CONFIRM_DELAY: Duration = Duration::from_millis(750);
 
 #[derive(Deserialize, Debug)]
 pub struct Embedded<T> {
@@ -263,6 +269,15 @@ pub enum RunStatusChange {
     Rejected { reason: String },
 }
 
+impl RunStatusChange {
+    fn status(&self) -> &'static str {
+        match self {
+            RunStatusChange::Verified => "verified",
+            RunStatusChange::Rejected { .. } => "rejected",
+        }
+    }
+}
+
 /// Changes the verification status of a run. The API key must belong to a
 /// moderator of the run's game.
 pub async fn set_run_status(
@@ -284,12 +299,67 @@ pub async fn set_run_status(
         .send()
         .await?
         .error_for_status()?;
+    confirm_status_change(run_id, change).await?;
     Ok(())
+}
+
+async fn confirm_status_change(run_id: &str, change: &RunStatusChange) -> Result<(), Error> {
+    let expected = change.status();
+    let mut last_status = None;
+
+    for attempt in 0..STATUS_CONFIRM_ATTEMPTS {
+        match get_run(run_id).await? {
+            Some(run) if run.status.status == expected => return Ok(()),
+            Some(run) => last_status = Some(run.status.status),
+            None => {
+                return Err(io::Error::other(format!(
+                    "speedrun.com status update for run {} returned success, but the run no longer exists",
+                    run_id
+                ))
+                .into());
+            }
+        }
+
+        if attempt + 1 < STATUS_CONFIRM_ATTEMPTS {
+            sleep(STATUS_CONFIRM_DELAY).await;
+        }
+    }
+
+    Err(unconfirmed_status_change_error(
+        run_id,
+        expected,
+        last_status.as_deref().unwrap_or("unknown"),
+    ))
+}
+
+fn unconfirmed_status_change_error(run_id: &str, expected: &str, actual: &str) -> Error {
+    io::Error::other(format!(
+        "speedrun.com status update for run {} returned success, but follow-up lookup still showed '{}'; expected '{}'",
+        run_id, actual, expected
+    ))
+    .into()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unconfirmed_status_change_error_describes_expected_status() {
+        let error = unconfirmed_status_change_error("abc123", "verified", "new");
+
+        assert!(error.to_string().contains("expected 'verified'"));
+    }
+
+    #[test]
+    fn run_status_change_exposes_expected_status() {
+        let reject = RunStatusChange::Rejected {
+            reason: "bad video".to_string(),
+        };
+
+        assert_eq!(RunStatusChange::Verified.status(), "verified");
+        assert_eq!(reject.status(), "rejected");
+    }
 
     #[tokio::test]
     #[ignore = "hits the live speedrun.com API"]

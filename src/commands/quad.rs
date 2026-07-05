@@ -94,15 +94,21 @@ pub async fn quad_options(
     #[description = "Section to show: summary, global, alttp, z1, sm, m1, combo"]
     #[autocomplete = "autocomplete_game"]
     section: Option<String>,
-    #[description = "Filter settings by key, name, category, or choice value"]
-    search: Option<String>,
     #[description = "Page number for long option lists"]
     page: Option<u8>,
     #[description = "Configured site to read metadata from, defaults to live"]
     #[autocomplete = "autocomplete_site"]
     site: Option<String>,
+    #[description = "Filter settings by key, name, category, or choice value"]
+    #[rest]
+    search: Option<String>,
 ) -> Result<(), Error> {
-    let site = match resolve_site(ctx, site.as_deref()).await {
+    // For prefix commands, `search` is the trailing rest, so embedded `page:N`
+    // and `site:name` tokens are parsed out of it. Slash callers use the
+    // discrete `page`/`site` fields and pass a plain search string.
+    let query = OptionsQuery::parse(search.as_deref(), page, site.as_deref());
+
+    let site = match resolve_site(ctx, query.site.as_deref()).await {
         Ok(site) => site,
         Err(error) => {
             ctx.say(error).await?;
@@ -120,9 +126,51 @@ pub async fn quad_options(
     };
 
     let section = section.as_deref().unwrap_or("summary");
-    let embed = options_embed(&metadata, section, search.as_deref(), page, &site);
+    let embed = options_embed(&metadata, section, query.search.as_deref(), query.page, &site);
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
     Ok(())
+}
+
+/// Resolved `quad-options` arguments. The discrete `page`/`site` slash fields
+/// take precedence; for prefix callers the same values can be embedded in the
+/// trailing search text as `page:N` / `site:name` tokens, and everything else
+/// is treated as the search query.
+struct OptionsQuery {
+    search: Option<String>,
+    page: Option<u8>,
+    site: Option<String>,
+}
+
+impl OptionsQuery {
+    fn parse(search: Option<&str>, page: Option<u8>, site: Option<&str>) -> Self {
+        let mut page = page;
+        let mut site = site.map(str::to_string);
+        let mut terms = Vec::new();
+
+        for token in search.unwrap_or_default().split_whitespace() {
+            match token.split_once(':').or_else(|| token.split_once('=')) {
+                Some(("page" | "p", value)) if page.is_none() => {
+                    if let Ok(value) = value.parse::<u8>() {
+                        page = Some(value);
+                        continue;
+                    }
+                    terms.push(token);
+                }
+                Some(("site" | "s", value)) if site.is_none() && !value.is_empty() => {
+                    site = Some(value.to_string());
+                }
+                _ => terms.push(token),
+            }
+        }
+
+        let search = if terms.is_empty() {
+            None
+        } else {
+            Some(terms.join(" "))
+        };
+
+        OptionsQuery { search, page, site }
+    }
 }
 
 async fn autocomplete_site(ctx: Context<'_>, partial: &str) -> Vec<String> {
@@ -1319,6 +1367,32 @@ mod tests {
         let (site, options) = split_site_and_options(Some("language:en".to_string()), None);
         assert_eq!(site, None);
         assert_eq!(options.as_deref(), Some("language:en"));
+    }
+
+    #[test]
+    fn options_query_parses_embedded_page_and_site() {
+        // Prefix: `%quad-options alttp dungeon shuffle page:2 site:beta`
+        let query = OptionsQuery::parse(Some("dungeon shuffle page:2 site:beta"), None, None);
+        assert_eq!(query.search.as_deref(), Some("dungeon shuffle"));
+        assert_eq!(query.page, Some(2));
+        assert_eq!(query.site.as_deref(), Some("beta"));
+
+        // Plain multi-word search with no embedded tokens.
+        let query = OptionsQuery::parse(Some("map shuffle"), None, None);
+        assert_eq!(query.search.as_deref(), Some("map shuffle"));
+        assert_eq!(query.page, None);
+        assert_eq!(query.site, None);
+
+        // Discrete slash fields win over embedded tokens.
+        let query = OptionsQuery::parse(Some("crystal page:5"), Some(2), Some("live"));
+        assert_eq!(query.search.as_deref(), Some("crystal page:5"));
+        assert_eq!(query.page, Some(2));
+        assert_eq!(query.site.as_deref(), Some("live"));
+
+        // A bare page number is NOT treated as a page (avoids eating search terms).
+        let query = OptionsQuery::parse(Some("2"), None, None);
+        assert_eq!(query.search.as_deref(), Some("2"));
+        assert_eq!(query.page, None);
     }
 
     #[test]
