@@ -1,16 +1,12 @@
 use std::io;
-use std::time::Duration;
 
 use reqwest::header::USER_AGENT;
 use serde::Deserialize;
-use tokio::time::sleep;
 
 use crate::Error;
 
 const API_BASE: &str = "https://www.speedrun.com/api/v1";
 const AGENT: &str = "shaktool-rs/2.0";
-const STATUS_CONFIRM_ATTEMPTS: usize = 3;
-const STATUS_CONFIRM_DELAY: Duration = Duration::from_millis(750);
 
 #[derive(Deserialize, Debug)]
 pub struct Embedded<T> {
@@ -278,6 +274,12 @@ impl RunStatusChange {
     }
 }
 
+#[derive(Deserialize, Debug)]
+struct StatusUpdateRun {
+    id: String,
+    status: RunStatus,
+}
+
 /// Changes the verification status of a run. The API key must belong to a
 /// moderator of the run's game.
 pub async fn set_run_status(
@@ -291,7 +293,7 @@ pub async fn set_run_status(
             serde_json::json!({"status": {"status": "rejected", "reason": reason}})
         }
     };
-    reqwest::Client::new()
+    let response = reqwest::Client::new()
         .put(format!("{}/runs/{}/status", API_BASE, run_id))
         .header(USER_AGENT, AGENT)
         .header("X-API-Key", api_key)
@@ -299,45 +301,38 @@ pub async fn set_run_status(
         .send()
         .await?
         .error_for_status()?;
-    confirm_status_change(run_id, change).await?;
+    validate_status_update_response(response.text().await?, run_id, change)?;
     Ok(())
 }
 
-async fn confirm_status_change(run_id: &str, change: &RunStatusChange) -> Result<(), Error> {
-    let expected = change.status();
-    let mut last_status = None;
-
-    for attempt in 0..STATUS_CONFIRM_ATTEMPTS {
-        match get_run(run_id).await? {
-            Some(run) if run.status.status == expected => return Ok(()),
-            Some(run) => last_status = Some(run.status.status),
-            None => {
-                return Err(io::Error::other(format!(
-                    "speedrun.com status update for run {} returned success, but the run no longer exists",
-                    run_id
-                ))
-                .into());
-            }
-        }
-
-        if attempt + 1 < STATUS_CONFIRM_ATTEMPTS {
-            sleep(STATUS_CONFIRM_DELAY).await;
-        }
+fn validate_status_update_response(
+    response_body: String,
+    run_id: &str,
+    change: &RunStatusChange,
+) -> Result<(), Error> {
+    if response_body.trim().is_empty() {
+        return Ok(());
     }
 
-    Err(unconfirmed_status_change_error(
-        run_id,
-        expected,
-        last_status.as_deref().unwrap_or("unknown"),
-    ))
-}
+    let updated: Embedded<StatusUpdateRun> = serde_json::from_str(&response_body)?;
+    if updated.data.id != run_id {
+        return Err(io::Error::other(format!(
+            "speedrun.com returned status for run {}, expected {}",
+            updated.data.id, run_id
+        ))
+        .into());
+    }
 
-fn unconfirmed_status_change_error(run_id: &str, expected: &str, actual: &str) -> Error {
-    io::Error::other(format!(
-        "speedrun.com status update for run {} returned success, but follow-up lookup still showed '{}'; expected '{}'",
-        run_id, actual, expected
-    ))
-    .into()
+    let expected = change.status();
+    if updated.data.status.status != expected {
+        return Err(io::Error::other(format!(
+            "speedrun.com returned status '{}' for run {}, expected '{}'",
+            updated.data.status.status, run_id, expected
+        ))
+        .into());
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -345,9 +340,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unconfirmed_status_change_error_describes_expected_status() {
-        let error = unconfirmed_status_change_error("abc123", "verified", "new");
+    fn status_update_validation_accepts_empty_response() {
+        validate_status_update_response("".to_string(), "abc123", &RunStatusChange::Verified)
+            .expect("empty success response should be accepted");
+    }
 
+    #[test]
+    fn status_update_validation_rejects_unapplied_change() {
+        let body = r#"{"data":{"id":"abc123","status":{"status":"new"}}}"#;
+
+        let error =
+            validate_status_update_response(body.to_string(), "abc123", &RunStatusChange::Verified)
+                .expect_err("unchanged status should be rejected");
         assert!(error.to_string().contains("expected 'verified'"));
     }
 
