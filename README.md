@@ -11,7 +11,7 @@ Run at your own risk
 - `SPEEDRUN_API_KEY` — API key of a speedrun.com account that moderates the monitored games
   (needed for the review buttons and `auto` mode)
 - `QUAD_API_KEY` — optional `quad.samus.link` personal API key (`qr_...`); enables the Quad
-  commands to list and roll the key owner's private seed profiles. Official profiles work
+  commands to list and roll the key owner's private seed presets. Official presets work
   without a key. Keep this server-side and never paste it into a Discord command.
 
 ## Background tasks
@@ -53,13 +53,13 @@ examples for the freeform `%quad ... options` argument. Useful examples:
 /quad-options section:alttp page:2
 ```
 
-Saved profiles can be discovered with `/quad-profiles` (or `%quad_profiles`) and rolled by
-copying the displayed internal profile ID into `/quad profile:<id>` (or `%quad profile:<id>`).
+Saved presets can be discovered with `/quad-presets` (or `%quad_presets`) and rolled by
+copying the displayed internal preset ID into `/quad preset:<id>` (or `%quad preset:<id>`).
 Add `revision:<id>` to roll an older revision; otherwise the current revision is used. A
-profile roll can override
+preset roll can override
 `seed` and `spoiler`, but cannot be mixed with game toggles or custom setting pairs because
-the saved profile supplies the complete configuration. The optional `QUAD_API_KEY` is sent
-as a Bearer token and makes the configured key owner's private profiles available.
+the saved preset supplies the complete configuration. The optional `QUAD_API_KEY` is sent
+as a Bearer token and makes the configured key owner's private presets available.
 
 Seed generation posts a "Generating seed" embed immediately, shows included games and changed
 options, and edits that message when the randomizer API returns. When metadata is available,

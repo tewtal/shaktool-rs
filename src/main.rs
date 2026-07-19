@@ -88,7 +88,7 @@ async fn main() {
                 commands::leaderboard::top(),
                 commands::leaderboard::records(),
                 commands::quad::quad(),
-                commands::quad::quad_profiles(),
+                commands::quad::quad_presets(),
                 commands::quad::quad_options(),
                 commands::smz3::smz3(),
                 commands::config::config(),

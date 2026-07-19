@@ -14,7 +14,7 @@ pub struct RandomizerRequest {
     pub seed: u64,
     pub include_spoiler: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub profile_id: Option<String>,
+    pub preset_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revision_id: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -37,7 +37,7 @@ pub struct RandomizerResponse {
 
 #[derive(Clone, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct ProfileSummary {
+pub struct PresetSummary {
     pub id: String,
     pub slug: Option<String>,
     pub name: String,
@@ -46,11 +46,11 @@ pub struct ProfileSummary {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct ProfilesResponse {
+pub struct PresetsResponse {
     #[serde(default)]
-    pub officials: Vec<ProfileSummary>,
+    pub officials: Vec<PresetSummary>,
     #[serde(default)]
-    pub mine: Vec<ProfileSummary>,
+    pub mine: Vec<PresetSummary>,
 }
 
 impl RandomizerResponse {
@@ -73,7 +73,7 @@ impl RandomizerRequest {
         Self {
             seed: 0,
             include_spoiler: true,
-            profile_id: None,
+            preset_id: None,
             revision_id: None,
             configs: vec![world],
             base_url: DEFAULT_BASE_URL.to_string(),
@@ -81,14 +81,14 @@ impl RandomizerRequest {
         }
     }
 
-    pub fn set_profile(&mut self, profile_id: &str, revision_id: Option<&str>) {
-        self.profile_id = Some(profile_id.to_string());
+    pub fn set_preset(&mut self, preset_id: &str, revision_id: Option<&str>) {
+        self.preset_id = Some(preset_id.to_string());
         self.revision_id = revision_id.map(str::to_string);
         self.configs.clear();
     }
 
-    pub fn is_profile(&self) -> bool {
-        self.profile_id.is_some()
+    pub fn is_preset(&self) -> bool {
+        self.preset_id.is_some()
     }
 
     pub fn set_game_enabled(&mut self, game: &str, enabled: bool) {
@@ -150,10 +150,10 @@ impl RandomizerRequest {
     }
 }
 
-pub async fn profiles(base_url: &str, api_key: Option<&str>) -> ApiResult<ProfilesResponse> {
+pub async fn presets(base_url: &str, api_key: Option<&str>) -> ApiResult<PresetsResponse> {
     let client = reqwest::Client::new();
     let mut request = client.get(format!(
-        "{}/api/profiles?configId=combo",
+        "{}/api/presets?configId=combo",
         base_url.trim_end_matches('/')
     ));
     if let Some(api_key) = api_key {
@@ -164,7 +164,7 @@ pub async fn profiles(base_url: &str, api_key: Option<&str>) -> ApiResult<Profil
     let status = response.status();
     let body = response.text().await?;
     if !status.is_success() {
-        return Err(format!("csrando profiles API returned {}: {}", status, body).into());
+        return Err(format!("csrando presets API returned {}: {}", status, body).into());
     }
 
     Ok(serde_json::from_str(&body)?)
@@ -194,38 +194,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn custom_request_serializes_configs_without_profile_fields_or_secrets() {
+    fn custom_request_serializes_configs_without_preset_fields_or_secrets() {
         let mut request = RandomizerRequest::quad();
         request.set_api_key(Some("qr_secret"));
 
         let value = serde_json::to_value(&request).unwrap();
         assert!(value.get("Configs").is_some());
-        assert!(value.get("ProfileId").is_none());
+        assert!(value.get("PresetId").is_none());
         assert!(value.get("RevisionId").is_none());
         assert!(!value.to_string().contains("qr_secret"));
     }
 
     #[test]
-    fn profile_request_uses_profile_contract_without_configs() {
+    fn preset_request_uses_preset_contract_without_configs() {
         let mut request = RandomizerRequest::quad();
         request.seed = 123;
         request.include_spoiler = false;
-        request.set_profile("profile-id", Some("revision-id"));
+        request.set_preset("preset-id", Some("revision-id"));
 
         assert_eq!(
             serde_json::to_value(&request).unwrap(),
             json!({
                 "Seed": 123,
                 "IncludeSpoiler": false,
-                "ProfileId": "profile-id",
+                "PresetId": "preset-id",
                 "RevisionId": "revision-id"
             })
         );
     }
 
     #[test]
-    fn profile_list_deserializes_camel_case_selected_games() {
-        let profiles: ProfilesResponse = serde_json::from_value(json!({
+    fn preset_list_deserializes_camel_case_selected_games() {
+        let presets: PresetsResponse = serde_json::from_value(json!({
             "officials": [{
                 "id": "id",
                 "scope": "official",
@@ -237,6 +237,6 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(profiles.officials[0].selected_games, vec!["Alttpr", "Sm"]);
+        assert_eq!(presets.officials[0].selected_games, vec!["Alttpr", "Sm"]);
     }
 }

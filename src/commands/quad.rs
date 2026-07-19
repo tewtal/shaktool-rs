@@ -28,7 +28,7 @@ struct QuadCommandOptions<'a> {
     zelda1: Option<bool>,
     super_metroid: Option<bool>,
     metroid1: Option<bool>,
-    profile: Option<&'a str>,
+    preset: Option<&'a str>,
     revision: Option<&'a str>,
     options: Option<&'a str>,
 }
@@ -45,10 +45,10 @@ pub async fn quad(
     #[description = "Configured site to roll on, defaults to live"]
     #[autocomplete = "autocomplete_site"]
     site: Option<String>,
-    #[description = "Saved profile's internal ID (use /quad-profiles to find one)"]
+    #[description = "Saved preset's internal ID (use /quad-presets to find one)"]
     #[lazy]
-    profile: Option<String>,
-    #[description = "Optional profile revision ID; defaults to the current revision"]
+    preset: Option<String>,
+    #[description = "Optional preset revision ID; defaults to the current revision"]
     #[lazy]
     revision: Option<String>,
     #[description = "Extra settings as key:value pairs, e.g. sm.logic:medium z1.dungeonshuffle:true"]
@@ -67,7 +67,7 @@ pub async fn quad(
         zelda1,
         super_metroid,
         metroid1,
-        profile: profile.as_deref(),
+        preset: preset.as_deref(),
         revision: revision.as_deref(),
         options: options.as_deref(),
     };
@@ -93,20 +93,20 @@ pub async fn quad(
     create_seed(ctx, &request, &site, command_options).await
 }
 
-/// Lists official and authenticated private Quad seed profiles
+/// Lists official and authenticated private Quad seed presets
 #[poise::command(
     prefix_command,
     slash_command,
-    rename = "quad-profiles",
-    aliases("quad_profiles", "quadprofiles")
+    rename = "quad-presets",
+    aliases("quad_presets", "quadpresets")
 )]
-pub async fn quad_profiles(
+pub async fn quad_presets(
     ctx: Context<'_>,
-    #[description = "Configured site to read profiles from, defaults to live"]
+    #[description = "Configured site to read presets from, defaults to live"]
     #[autocomplete = "autocomplete_site"]
     #[lazy]
     site: Option<String>,
-    #[description = "Filter profiles by name, slug, ID, or game"]
+    #[description = "Filter presets by name, slug, ID, or game"]
     #[rest]
     search: Option<String>,
 ) -> Result<(), Error> {
@@ -118,11 +118,11 @@ pub async fn quad_profiles(
         }
     };
     let api_key = quad_api_key();
-    let profiles = match quad::profiles(&site.url, api_key.as_deref()).await {
-        Ok(profiles) => profiles,
+    let presets = match quad::presets(&site.url, api_key.as_deref()).await {
+        Ok(presets) => presets,
         Err(error) => {
             ctx.say(format!(
-                "Couldn't fetch Quad profiles from `{}`: {}",
+                "Couldn't fetch Quad presets from `{}`: {}",
                 site.name, error
             ))
             .await?;
@@ -130,7 +130,7 @@ pub async fn quad_profiles(
         }
     };
 
-    let embed = profiles_embed(&profiles, &site, search.as_deref(), api_key.is_some());
+    let embed = presets_embed(&presets, &site, search.as_deref(), api_key.is_some());
     ctx.send(poise::CreateReply::default().embed(embed)).await?;
     Ok(())
 }
@@ -346,27 +346,27 @@ fn quad_api_key() -> Option<String> {
         .filter(|key| !key.is_empty())
 }
 
-fn profiles_embed(
-    profiles: &quad::ProfilesResponse,
+fn presets_embed(
+    presets: &quad::PresetsResponse,
     site: &QuadSite,
     search: Option<&str>,
     authenticated: bool,
 ) -> CreateEmbed {
     let search = search.map(str::trim).filter(|value| !value.is_empty());
     let mut embed = CreateEmbed::new()
-        .title("Quad Seed Profiles")
+        .title("Quad Seed Presets")
         .description(
-            "Copy the internal ID into `/quad profile:`. Official profile slugs are for website links and cannot be used to roll through the API.",
+            "Copy the internal ID into `/quad preset:`. Official preset slugs are for website links and cannot be used to roll through the API.",
         )
         .color(QUAD_COLOR_HELP);
 
-    let officials = format_profile_list(&profiles.officials, search);
-    let mine = format_profile_list(&profiles.mine, search);
-    embed = embed.field("Official profiles", officials, false).field(
+    let officials = format_preset_list(&presets.officials, search);
+    let mine = format_preset_list(&presets.mine, search);
+    embed = embed.field("Official presets", officials, false).field(
         if authenticated {
-            "My private profiles"
+            "My private presets"
         } else {
-            "My private profiles (QUAD_API_KEY not configured)"
+            "My private presets (QUAD_API_KEY not configured)"
         },
         mine,
         false,
@@ -376,23 +376,23 @@ fn profiles_embed(
         embed = embed.field("Site", &site.name, true);
     }
     embed.footer(CreateEmbedFooter::new(
-        "Profiles are read from configId=combo. Results are limited to 10 per section.",
+        "Presets are read from configId=combo. Results are limited to 10 per section.",
     ))
 }
 
-fn format_profile_list(profiles: &[quad::ProfileSummary], search: Option<&str>) -> String {
+fn format_preset_list(presets: &[quad::PresetSummary], search: Option<&str>) -> String {
     let search = search.map(str::to_ascii_lowercase);
-    let matches = profiles.iter().filter(|profile| {
+    let matches = presets.iter().filter(|preset| {
         let Some(search) = search.as_deref() else {
             return true;
         };
-        profile.name.to_ascii_lowercase().contains(search)
-            || profile.id.to_ascii_lowercase().contains(search)
-            || profile
+        preset.name.to_ascii_lowercase().contains(search)
+            || preset.id.to_ascii_lowercase().contains(search)
+            || preset
                 .slug
                 .as_deref()
                 .is_some_and(|slug| slug.to_ascii_lowercase().contains(search))
-            || profile
+            || preset
                 .selected_games
                 .iter()
                 .any(|game| game.to_ascii_lowercase().contains(search))
@@ -400,18 +400,18 @@ fn format_profile_list(profiles: &[quad::ProfileSummary], search: Option<&str>) 
 
     let lines = matches
         .take(10)
-        .map(|profile| {
-            let games = if profile.selected_games.is_empty() {
+        .map(|preset| {
+            let games = if preset.selected_games.is_empty() {
                 String::new()
             } else {
-                format!(" — {}", profile.selected_games.join(", "))
+                format!(" — {}", preset.selected_games.join(", "))
             };
-            let slug = profile
+            let slug = preset
                 .slug
                 .as_deref()
                 .map(|slug| format!(" (`{}`)", slug))
                 .unwrap_or_default();
-            format!("**{}**{}{}\n`{}`", profile.name, slug, games, profile.id)
+            format!("**{}**{}{}\n`{}`", preset.name, slug, games, preset.id)
         })
         .collect::<Vec<_>>();
 
@@ -868,33 +868,33 @@ fn apply_command_options(
     request: &mut RandomizerRequest,
     options: QuadCommandOptions<'_>,
 ) -> Result<(), String> {
-    let profile_in_options = options
+    let preset_in_options = options
         .options
-        .is_some_and(|value| option_tokens_include(value, &["profile", "profileid"]));
-    let profile_requested = options.profile.is_some() || profile_in_options;
-    if options.profile.is_some() && profile_in_options {
-        return Err("specify `profile` only once".to_string());
+        .is_some_and(|value| option_tokens_include(value, &["preset", "presetid"]));
+    let preset_requested = options.preset.is_some() || preset_in_options;
+    if options.preset.is_some() && preset_in_options {
+        return Err("specify `preset` only once".to_string());
     }
-    if profile_requested
+    if preset_requested
         && (options.zelda1.is_some()
             || options.super_metroid.is_some()
             || options.metroid1.is_some()
             || options.options.is_some_and(options_include_custom_settings))
     {
         return Err(
-            "a saved profile cannot be combined with game toggles or custom settings; only seed, spoiler, and revision may override it"
+            "a saved preset cannot be combined with game toggles or custom settings; only seed, spoiler, and revision may override it"
                 .to_string(),
         );
     }
 
-    if let Some(profile) = options.profile {
-        let profile = profile.trim();
-        if profile.is_empty() {
-            return Err("`profile` cannot be empty".to_string());
+    if let Some(preset) = options.preset {
+        let preset = preset.trim();
+        if preset.is_empty() {
+            return Err("`preset` cannot be empty".to_string());
         }
-        request.set_profile(profile, options.revision.map(str::trim));
-    } else if options.revision.is_some() && !profile_in_options {
-        return Err("`revision` requires a saved profile".to_string());
+        request.set_preset(preset, options.revision.map(str::trim));
+    } else if options.revision.is_some() && !preset_in_options {
+        return Err("`revision` requires a saved preset".to_string());
     }
 
     if let Some(seed) = options.seed {
@@ -922,8 +922,8 @@ fn apply_command_options(
         }
         request.revision_id = Some(revision.to_string());
     }
-    if request.revision_id.is_some() && !request.is_profile() {
-        return Err("`revision` requires a saved profile".to_string());
+    if request.revision_id.is_some() && !request.is_preset() {
+        return Err("`revision` requires a saved preset".to_string());
     }
     Ok(())
 }
@@ -949,8 +949,8 @@ fn options_include_custom_settings(options: &str) -> bool {
                     "seed"
                         | "spoiler"
                         | "includespoiler"
-                        | "profile"
-                        | "profileid"
+                        | "preset"
+                        | "presetid"
                         | "revision"
                         | "revisionid"
                 )
@@ -1136,14 +1136,14 @@ fn apply_option(request: &mut RandomizerRequest, key: &str, value: Value) -> Res
                 .as_bool()
                 .ok_or_else(|| "`spoiler` must be true or false".to_string())?;
         }
-        "profile" | "profileid" => {
-            let profile = value
+        "preset" | "presetid" => {
+            let preset = value
                 .as_str()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .ok_or_else(|| "`profile` must be a non-empty internal profile ID".to_string())?;
+                .ok_or_else(|| "`preset` must be a non-empty internal preset ID".to_string())?;
             let revision = request.revision_id.clone();
-            request.set_profile(profile, revision.as_deref());
+            request.set_preset(preset, revision.as_deref());
         }
         "revision" | "revisionid" => {
             let revision = value
@@ -1268,7 +1268,7 @@ async fn create_seed(
     let mut default_request = RandomizerRequest::quad();
     default_request.set_base_url(&site.url);
     default_request.set_api_key(quad_api_key().as_deref());
-    let metadata_loaded = if preview_request.is_profile() {
+    let metadata_loaded = if preview_request.is_preset() {
         true
     } else {
         match quad::metadata(&site.url).await {
@@ -1393,12 +1393,12 @@ fn seed_embed(
         .field("Games", included_games_text(request), false)
         .field("Options", options_summary(highlights), false);
 
-    if let Some(profile_id) = request.profile_id.as_deref() {
-        let profile = match request.revision_id.as_deref() {
-            Some(revision_id) => format!("`{}` (revision `{}`)", profile_id, revision_id),
-            None => format!("`{}` (current revision)", profile_id),
+    if let Some(preset_id) = request.preset_id.as_deref() {
+        let preset = match request.revision_id.as_deref() {
+            Some(revision_id) => format!("`{}` (revision `{}`)", preset_id, revision_id),
+            None => format!("`{}` (current revision)", preset_id),
         };
-        embed = embed.field("Profile", profile, false);
+        embed = embed.field("Preset", preset, false);
     }
 
     if !is_live_site(site) {
@@ -1409,8 +1409,8 @@ fn seed_embed(
 }
 
 fn included_games_text(request: &RandomizerRequest) -> String {
-    if request.is_profile() {
-        return "Defined by saved profile".to_string();
+    if request.is_preset() {
+        return "Defined by saved preset".to_string();
     }
     let games = included_game_keys(request, false)
         .into_iter()
@@ -1450,8 +1450,8 @@ fn request_highlights(
     request: &RandomizerRequest,
     default_request: &RandomizerRequest,
 ) -> Vec<String> {
-    if request.is_profile() {
-        let mut options = vec!["Saved profile settings".to_string()];
+    if request.is_preset() {
+        let mut options = vec!["Saved preset settings".to_string()];
         if request.seed != 0 {
             options.push(format!("Seed: {}", requested_seed_text(request)));
         }
@@ -1586,7 +1586,7 @@ mod tests {
             zelda1: None,
             super_metroid: None,
             metroid1: None,
-            profile: None,
+            preset: None,
             revision: None,
             options,
         }
@@ -1613,17 +1613,17 @@ mod tests {
     }
 
     #[test]
-    fn profile_options_build_a_profile_request() {
+    fn preset_options_build_a_preset_request() {
         let mut request = RandomizerRequest::quad();
         apply_command_options(
             &mut request,
             command_options(Some(
-                "revision:revision-id profile:profile-id seed:123 spoiler:false",
+                "revision:revision-id preset:preset-id seed:123 spoiler:false",
             )),
         )
         .unwrap();
 
-        assert_eq!(request.profile_id.as_deref(), Some("profile-id"));
+        assert_eq!(request.preset_id.as_deref(), Some("preset-id"));
         assert_eq!(request.revision_id.as_deref(), Some("revision-id"));
         assert!(request.configs.is_empty());
         assert_eq!(request.seed, 123);
@@ -1631,11 +1631,11 @@ mod tests {
     }
 
     #[test]
-    fn profile_rejects_custom_settings_and_revision_requires_profile() {
+    fn preset_rejects_custom_settings_and_revision_requires_preset() {
         let mut request = RandomizerRequest::quad();
         let error = apply_command_options(
             &mut request,
-            command_options(Some("profile:profile-id sm.logic:medium")),
+            command_options(Some("preset:preset-id sm.logic:medium")),
         )
         .unwrap_err();
         assert!(error.contains("cannot be combined"));
@@ -1644,7 +1644,7 @@ mod tests {
         let error =
             apply_command_options(&mut request, command_options(Some("revision:revision-id")))
                 .unwrap_err();
-        assert!(error.contains("requires a saved profile"));
+        assert!(error.contains("requires a saved preset"));
     }
 
     #[test]
