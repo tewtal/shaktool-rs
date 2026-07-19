@@ -28,6 +28,8 @@ struct QuadCommandOptions<'a> {
     zelda1: Option<bool>,
     super_metroid: Option<bool>,
     metroid1: Option<bool>,
+    profile: Option<&'a str>,
+    revision: Option<&'a str>,
     options: Option<&'a str>,
 }
 
@@ -43,6 +45,12 @@ pub async fn quad(
     #[description = "Configured site to roll on, defaults to live"]
     #[autocomplete = "autocomplete_site"]
     site: Option<String>,
+    #[description = "Saved profile's internal ID (use /quad-profiles to find one)"]
+    #[lazy]
+    profile: Option<String>,
+    #[description = "Optional profile revision ID; defaults to the current revision"]
+    #[lazy]
+    revision: Option<String>,
     #[description = "Extra settings as key:value pairs, e.g. sm.logic:medium z1.dungeonshuffle:true"]
     #[rest]
     options: Option<String>,
@@ -59,6 +67,8 @@ pub async fn quad(
         zelda1,
         super_metroid,
         metroid1,
+        profile: profile.as_deref(),
+        revision: revision.as_deref(),
         options: options.as_deref(),
     };
 
@@ -72,6 +82,7 @@ pub async fn quad(
 
     let mut request = RandomizerRequest::quad();
     request.set_base_url(&site.url);
+    request.set_api_key(quad_api_key().as_deref());
 
     if let Err(error) = apply_command_options(&mut request, command_options) {
         ctx.say(format!("Error parsing Quad options: {}", error))
@@ -80,6 +91,48 @@ pub async fn quad(
     }
 
     create_seed(ctx, &request, &site, command_options).await
+}
+
+/// Lists official and authenticated private Quad seed profiles
+#[poise::command(
+    prefix_command,
+    slash_command,
+    rename = "quad-profiles",
+    aliases("quad_profiles", "quadprofiles")
+)]
+pub async fn quad_profiles(
+    ctx: Context<'_>,
+    #[description = "Configured site to read profiles from, defaults to live"]
+    #[autocomplete = "autocomplete_site"]
+    #[lazy]
+    site: Option<String>,
+    #[description = "Filter profiles by name, slug, ID, or game"]
+    #[rest]
+    search: Option<String>,
+) -> Result<(), Error> {
+    let site = match resolve_site(ctx, site.as_deref()).await {
+        Ok(site) => site,
+        Err(error) => {
+            ctx.say(error).await?;
+            return Ok(());
+        }
+    };
+    let api_key = quad_api_key();
+    let profiles = match quad::profiles(&site.url, api_key.as_deref()).await {
+        Ok(profiles) => profiles,
+        Err(error) => {
+            ctx.say(format!(
+                "Couldn't fetch Quad profiles from `{}`: {}",
+                site.name, error
+            ))
+            .await?;
+            return Ok(());
+        }
+    };
+
+    let embed = profiles_embed(&profiles, &site, search.as_deref(), api_key.is_some());
+    ctx.send(poise::CreateReply::default().embed(embed)).await?;
+    Ok(())
 }
 
 /// Shows Quad randomizer options from site metadata
@@ -284,6 +337,89 @@ fn parse_sites(value: &str) -> Vec<QuadSite> {
             })
         })
         .collect()
+}
+
+fn quad_api_key() -> Option<String> {
+    std::env::var("QUAD_API_KEY")
+        .ok()
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
+}
+
+fn profiles_embed(
+    profiles: &quad::ProfilesResponse,
+    site: &QuadSite,
+    search: Option<&str>,
+    authenticated: bool,
+) -> CreateEmbed {
+    let search = search.map(str::trim).filter(|value| !value.is_empty());
+    let mut embed = CreateEmbed::new()
+        .title("Quad Seed Profiles")
+        .description(
+            "Copy the internal ID into `/quad profile:`. Official profile slugs are for website links and cannot be used to roll through the API.",
+        )
+        .color(QUAD_COLOR_HELP);
+
+    let officials = format_profile_list(&profiles.officials, search);
+    let mine = format_profile_list(&profiles.mine, search);
+    embed = embed.field("Official profiles", officials, false).field(
+        if authenticated {
+            "My private profiles"
+        } else {
+            "My private profiles (QUAD_API_KEY not configured)"
+        },
+        mine,
+        false,
+    );
+
+    if !is_live_site(site) {
+        embed = embed.field("Site", &site.name, true);
+    }
+    embed.footer(CreateEmbedFooter::new(
+        "Profiles are read from configId=combo. Results are limited to 10 per section.",
+    ))
+}
+
+fn format_profile_list(profiles: &[quad::ProfileSummary], search: Option<&str>) -> String {
+    let search = search.map(str::to_ascii_lowercase);
+    let matches = profiles.iter().filter(|profile| {
+        let Some(search) = search.as_deref() else {
+            return true;
+        };
+        profile.name.to_ascii_lowercase().contains(search)
+            || profile.id.to_ascii_lowercase().contains(search)
+            || profile
+                .slug
+                .as_deref()
+                .is_some_and(|slug| slug.to_ascii_lowercase().contains(search))
+            || profile
+                .selected_games
+                .iter()
+                .any(|game| game.to_ascii_lowercase().contains(search))
+    });
+
+    let lines = matches
+        .take(10)
+        .map(|profile| {
+            let games = if profile.selected_games.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", profile.selected_games.join(", "))
+            };
+            let slug = profile
+                .slug
+                .as_deref()
+                .map(|slug| format!(" (`{}`)", slug))
+                .unwrap_or_default();
+            format!("**{}**{}{}\n`{}`", profile.name, slug, games, profile.id)
+        })
+        .collect::<Vec<_>>();
+
+    if lines.is_empty() {
+        "None found".to_string()
+    } else {
+        short_text(&lines.join("\n"), OPTIONS_FIELD_LIMIT)
+    }
 }
 
 fn options_embed(
@@ -732,6 +868,35 @@ fn apply_command_options(
     request: &mut RandomizerRequest,
     options: QuadCommandOptions<'_>,
 ) -> Result<(), String> {
+    let profile_in_options = options
+        .options
+        .is_some_and(|value| option_tokens_include(value, &["profile", "profileid"]));
+    let profile_requested = options.profile.is_some() || profile_in_options;
+    if options.profile.is_some() && profile_in_options {
+        return Err("specify `profile` only once".to_string());
+    }
+    if profile_requested
+        && (options.zelda1.is_some()
+            || options.super_metroid.is_some()
+            || options.metroid1.is_some()
+            || options.options.is_some_and(options_include_custom_settings))
+    {
+        return Err(
+            "a saved profile cannot be combined with game toggles or custom settings; only seed, spoiler, and revision may override it"
+                .to_string(),
+        );
+    }
+
+    if let Some(profile) = options.profile {
+        let profile = profile.trim();
+        if profile.is_empty() {
+            return Err("`profile` cannot be empty".to_string());
+        }
+        request.set_profile(profile, options.revision.map(str::trim));
+    } else if options.revision.is_some() && !profile_in_options {
+        return Err("`revision` requires a saved profile".to_string());
+    }
+
     if let Some(seed) = options.seed {
         request.seed = seed;
     }
@@ -750,7 +915,48 @@ fn apply_command_options(
     if let Some(options) = options.options {
         parse_options(options, request)?;
     }
+    if let Some(revision) = options.revision {
+        let revision = revision.trim();
+        if revision.is_empty() {
+            return Err("`revision` cannot be empty".to_string());
+        }
+        request.revision_id = Some(revision.to_string());
+    }
+    if request.revision_id.is_some() && !request.is_profile() {
+        return Err("`revision` requires a saved profile".to_string());
+    }
     Ok(())
+}
+
+fn option_tokens_include(options: &str, names: &[&str]) -> bool {
+    options.split_whitespace().any(|option| {
+        option
+            .split_once(':')
+            .or_else(|| option.split_once('='))
+            .map(|(key, _)| names.contains(&normalize_key(key).as_str()))
+            .unwrap_or(false)
+    })
+}
+
+fn options_include_custom_settings(options: &str) -> bool {
+    options.split_whitespace().any(|option| {
+        option
+            .split_once(':')
+            .or_else(|| option.split_once('='))
+            .map(|(key, _)| {
+                !matches!(
+                    normalize_key(key).as_str(),
+                    "seed"
+                        | "spoiler"
+                        | "includespoiler"
+                        | "profile"
+                        | "profileid"
+                        | "revision"
+                        | "revisionid"
+                )
+            })
+            .unwrap_or(true)
+    })
 }
 
 fn apply_metadata_defaults(request: &mut RandomizerRequest, metadata: &Value) {
@@ -930,6 +1136,23 @@ fn apply_option(request: &mut RandomizerRequest, key: &str, value: Value) -> Res
                 .as_bool()
                 .ok_or_else(|| "`spoiler` must be true or false".to_string())?;
         }
+        "profile" | "profileid" => {
+            let profile = value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "`profile` must be a non-empty internal profile ID".to_string())?;
+            let revision = request.revision_id.clone();
+            request.set_profile(profile, revision.as_deref());
+        }
+        "revision" | "revisionid" => {
+            let revision = value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "`revision` must be a non-empty revision ID".to_string())?;
+            request.revision_id = Some(revision.to_string());
+        }
         "z1" | "zelda1" => {
             request.set_game_enabled("Zelda1", bool_value("z1", &value)?);
         }
@@ -1032,7 +1255,7 @@ async fn create_seed(
 ) -> Result<(), Error> {
     let mut preview_defaults = RandomizerRequest::quad();
     preview_defaults.set_base_url(&site.url);
-    let preview_highlights = notable_options(preview_request, &preview_defaults);
+    let preview_highlights = request_highlights(preview_request, &preview_defaults);
 
     let handle = ctx
         .send(poise::CreateReply::default().embed(generating_embed(
@@ -1044,12 +1267,17 @@ async fn create_seed(
 
     let mut default_request = RandomizerRequest::quad();
     default_request.set_base_url(&site.url);
-    let metadata_loaded = match quad::metadata(&site.url).await {
-        Ok(metadata) => {
-            apply_metadata_defaults(&mut default_request, &metadata);
-            true
+    default_request.set_api_key(quad_api_key().as_deref());
+    let metadata_loaded = if preview_request.is_profile() {
+        true
+    } else {
+        match quad::metadata(&site.url).await {
+            Ok(metadata) => {
+                apply_metadata_defaults(&mut default_request, &metadata);
+                true
+            }
+            Err(_) => false,
         }
-        Err(_) => false,
     };
 
     let mut request = default_request.clone();
@@ -1060,7 +1288,7 @@ async fn create_seed(
                 poise::CreateReply::default().embed(error_embed(
                     &request,
                     site,
-                    &notable_options(&request, &default_request),
+                    &request_highlights(&request, &default_request),
                     &format!("Error parsing Quad options: {}", error),
                 )),
             )
@@ -1068,7 +1296,7 @@ async fn create_seed(
         return Ok(());
     }
 
-    let highlights = notable_options(&request, &default_request);
+    let highlights = request_highlights(&request, &default_request);
     match request.send().await {
         Err(error) => {
             handle
@@ -1165,6 +1393,14 @@ fn seed_embed(
         .field("Games", included_games_text(request), false)
         .field("Options", options_summary(highlights), false);
 
+    if let Some(profile_id) = request.profile_id.as_deref() {
+        let profile = match request.revision_id.as_deref() {
+            Some(revision_id) => format!("`{}` (revision `{}`)", profile_id, revision_id),
+            None => format!("`{}` (current revision)", profile_id),
+        };
+        embed = embed.field("Profile", profile, false);
+    }
+
     if !is_live_site(site) {
         embed = embed.field("Site", &site.name, true);
     }
@@ -1173,6 +1409,9 @@ fn seed_embed(
 }
 
 fn included_games_text(request: &RandomizerRequest) -> String {
+    if request.is_profile() {
+        return "Defined by saved profile".to_string();
+    }
     let games = included_game_keys(request, false)
         .into_iter()
         .map(game_label)
@@ -1205,6 +1444,23 @@ fn options_summary(highlights: &[String]) -> String {
     } else {
         format!("{}\n+{} more", shown.join("\n"), hidden)
     }
+}
+
+fn request_highlights(
+    request: &RandomizerRequest,
+    default_request: &RandomizerRequest,
+) -> Vec<String> {
+    if request.is_profile() {
+        let mut options = vec!["Saved profile settings".to_string()];
+        if request.seed != 0 {
+            options.push(format!("Seed: {}", requested_seed_text(request)));
+        }
+        if !request.include_spoiler {
+            options.push("Spoiler log: off".to_string());
+        }
+        return options;
+    }
+    notable_options(request, default_request)
 }
 
 fn notable_options(
@@ -1323,6 +1579,19 @@ fn is_live_site(site: &QuadSite) -> bool {
 mod tests {
     use super::*;
 
+    fn command_options<'a>(options: Option<&'a str>) -> QuadCommandOptions<'a> {
+        QuadCommandOptions {
+            seed: None,
+            spoiler: None,
+            zelda1: None,
+            super_metroid: None,
+            metroid1: None,
+            profile: None,
+            revision: None,
+            options,
+        }
+    }
+
     #[test]
     fn parses_shortcuts_and_game_options() {
         let mut request = RandomizerRequest::quad();
@@ -1341,6 +1610,41 @@ mod tests {
         parse_options("z1.dungeonshuffle:true", &mut request).unwrap();
         let world = &request.configs[0];
         assert_eq!(world["Zelda1"]["DungeonShuffle"], json!(true));
+    }
+
+    #[test]
+    fn profile_options_build_a_profile_request() {
+        let mut request = RandomizerRequest::quad();
+        apply_command_options(
+            &mut request,
+            command_options(Some(
+                "revision:revision-id profile:profile-id seed:123 spoiler:false",
+            )),
+        )
+        .unwrap();
+
+        assert_eq!(request.profile_id.as_deref(), Some("profile-id"));
+        assert_eq!(request.revision_id.as_deref(), Some("revision-id"));
+        assert!(request.configs.is_empty());
+        assert_eq!(request.seed, 123);
+        assert!(!request.include_spoiler);
+    }
+
+    #[test]
+    fn profile_rejects_custom_settings_and_revision_requires_profile() {
+        let mut request = RandomizerRequest::quad();
+        let error = apply_command_options(
+            &mut request,
+            command_options(Some("profile:profile-id sm.logic:medium")),
+        )
+        .unwrap_err();
+        assert!(error.contains("cannot be combined"));
+
+        let mut request = RandomizerRequest::quad();
+        let error =
+            apply_command_options(&mut request, command_options(Some("revision:revision-id")))
+                .unwrap_err();
+        assert!(error.contains("requires a saved profile"));
     }
 
     #[test]

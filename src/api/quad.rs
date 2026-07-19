@@ -13,9 +13,16 @@ const DEFAULT_GAME: &str = "Combo";
 pub struct RandomizerRequest {
     pub seed: u64,
     pub include_spoiler: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision_id: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub configs: Vec<Map<String, Value>>,
     #[serde(skip)]
     pub base_url: String,
+    #[serde(skip)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -26,6 +33,24 @@ pub struct RandomizerResponse {
     pub worlds: Map<String, Value>,
     #[serde(rename = "spoilerLog")]
     pub spoiler_log: Option<Value>,
+}
+
+#[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileSummary {
+    pub id: String,
+    pub slug: Option<String>,
+    pub name: String,
+    #[serde(default)]
+    pub selected_games: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ProfilesResponse {
+    #[serde(default)]
+    pub officials: Vec<ProfileSummary>,
+    #[serde(default)]
+    pub mine: Vec<ProfileSummary>,
 }
 
 impl RandomizerResponse {
@@ -48,9 +73,22 @@ impl RandomizerRequest {
         Self {
             seed: 0,
             include_spoiler: true,
+            profile_id: None,
+            revision_id: None,
             configs: vec![world],
             base_url: DEFAULT_BASE_URL.to_string(),
+            api_key: None,
         }
+    }
+
+    pub fn set_profile(&mut self, profile_id: &str, revision_id: Option<&str>) {
+        self.profile_id = Some(profile_id.to_string());
+        self.revision_id = revision_id.map(str::to_string);
+        self.configs.clear();
+    }
+
+    pub fn is_profile(&self) -> bool {
+        self.profile_id.is_some()
     }
 
     pub fn set_game_enabled(&mut self, game: &str, enabled: bool) {
@@ -81,13 +119,19 @@ impl RandomizerRequest {
         self.base_url = base_url.trim_end_matches('/').to_string();
     }
 
+    pub fn set_api_key(&mut self, api_key: Option<&str>) {
+        self.api_key = api_key.map(str::to_string);
+    }
+
     pub async fn send(&self) -> ApiResult<RandomizerResponse> {
         let client = reqwest::Client::new();
-        let response = client
+        let mut request = client
             .post(format!("{}/api/randomize", self.base_url))
-            .json(self)
-            .send()
-            .await?;
+            .json(self);
+        if let Some(api_key) = self.api_key.as_deref() {
+            request = request.bearer_auth(api_key);
+        }
+        let response = request.send().await?;
 
         let status = response.status();
         let body = response.text().await?;
@@ -106,10 +150,33 @@ impl RandomizerRequest {
     }
 }
 
+pub async fn profiles(base_url: &str, api_key: Option<&str>) -> ApiResult<ProfilesResponse> {
+    let client = reqwest::Client::new();
+    let mut request = client.get(format!(
+        "{}/api/profiles?configId=combo",
+        base_url.trim_end_matches('/')
+    ));
+    if let Some(api_key) = api_key {
+        request = request.bearer_auth(api_key);
+    }
+    let response = request.send().await?;
+
+    let status = response.status();
+    let body = response.text().await?;
+    if !status.is_success() {
+        return Err(format!("csrando profiles API returned {}: {}", status, body).into());
+    }
+
+    Ok(serde_json::from_str(&body)?)
+}
+
 pub async fn metadata(base_url: &str) -> ApiResult<Value> {
     let client = reqwest::Client::new();
     let response = client
-        .get(format!("{}/api/metadata/Combo", base_url.trim_end_matches('/')))
+        .get(format!(
+            "{}/api/metadata/Combo",
+            base_url.trim_end_matches('/')
+        ))
         .send()
         .await?;
 
@@ -120,4 +187,56 @@ pub async fn metadata(base_url: &str) -> ApiResult<Value> {
     }
 
     Ok(serde_json::from_str(&body)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn custom_request_serializes_configs_without_profile_fields_or_secrets() {
+        let mut request = RandomizerRequest::quad();
+        request.set_api_key(Some("qr_secret"));
+
+        let value = serde_json::to_value(&request).unwrap();
+        assert!(value.get("Configs").is_some());
+        assert!(value.get("ProfileId").is_none());
+        assert!(value.get("RevisionId").is_none());
+        assert!(!value.to_string().contains("qr_secret"));
+    }
+
+    #[test]
+    fn profile_request_uses_profile_contract_without_configs() {
+        let mut request = RandomizerRequest::quad();
+        request.seed = 123;
+        request.include_spoiler = false;
+        request.set_profile("profile-id", Some("revision-id"));
+
+        assert_eq!(
+            serde_json::to_value(&request).unwrap(),
+            json!({
+                "Seed": 123,
+                "IncludeSpoiler": false,
+                "ProfileId": "profile-id",
+                "RevisionId": "revision-id"
+            })
+        );
+    }
+
+    #[test]
+    fn profile_list_deserializes_camel_case_selected_games() {
+        let profiles: ProfilesResponse = serde_json::from_value(json!({
+            "officials": [{
+                "id": "id",
+                "scope": "official",
+                "slug": "recommended",
+                "name": "Recommended",
+                "selectedGames": ["Alttpr", "Sm"]
+            }],
+            "mine": []
+        }))
+        .unwrap();
+
+        assert_eq!(profiles.officials[0].selected_games, vec!["Alttpr", "Sm"]);
+    }
 }
